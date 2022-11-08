@@ -71,6 +71,7 @@ def batch_norm_backward(grad_out, X, sum, sqrt_var, N, eps):
 
 class FusedConvBN2DFunction(torch.autograd.Function):
     @staticmethod
+    @torch.cuda.amp.custom_fwd
     def forward(ctx, X, conv_weight, stride=1, padding=1, eps=1e-3):
         assert X.ndim == 4  # N, C, H, W
         # (1) Only need to save this single buffer for backward!
@@ -99,6 +100,7 @@ class FusedConvBN2DFunction(torch.autograd.Function):
         return out
 
     @staticmethod
+    @torch.cuda.amp.custom_bwd
     def backward(ctx, grad_out):
         X, conv_weight = ctx.saved_tensors
         # (4) Batch norm backward

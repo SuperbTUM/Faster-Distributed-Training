@@ -14,6 +14,14 @@ import argparse
 from resnet import resnet50
 from prefetch_generator import BackgroundGenerator
 
+try:
+    from torch import autocast
+    from torch.cuda.amp import GradScaler
+    use_torch_extension = True
+except:
+    from apex import amp
+    use_torch_extension = False
+
 
 class DataLoaderX(torch.utils.data.DataLoader):
     def __iter__(self):
@@ -48,12 +56,12 @@ def data_preparation():
     trainset = torchvision.datasets.CIFAR10(
         root='./data', train=True, download=True, transform=transform_train)
     trainloader = DataLoaderX(
-        trainset, batch_size=128, shuffle=True, num_workers=4)
+        trainset, batch_size=128, shuffle=True, num_workers=4, pin_memory=True, persistent_workers=True)
 
     testset = torchvision.datasets.CIFAR10(
         root='./data', train=False, download=True, transform=transform_test)
     testloader = DataLoaderX(
-        testset, batch_size=100, shuffle=False, num_workers=4)
+        testset, batch_size=100, shuffle=False, num_workers=4, pin_memory=True, persistent_workers=True)
     classes = ('plane', 'car', 'bird', 'cat', 'deer',
                'dog', 'frog', 'horse', 'ship', 'truck')
     return trainloader, testloader, classes
@@ -64,7 +72,8 @@ def get_model(args, classes):
     print('==> Building model..')
     net = resnet50(len(classes)).to(device)
     if device == 'cuda':
-        net = torch.nn.DataParallel(net)
+        if use_torch_extension:
+            net = torch.nn.DataParallel(net)
         cudnn.benchmark = True
 
     best_acc = 0  # best test accuracy
@@ -95,22 +104,53 @@ def train(epoch, trainloader, net, optimizer, criterion):
     total = 0
     batch_idx = 0
     iterator = tqdm(trainloader)
-    for inputs, targets in iterator:
-        inputs, targets = inputs.to(device), targets.to(device)
-        optimizer.zero_grad(set_to_none=True)
-        outputs = net(inputs)
-        loss = criterion(outputs, targets)
-        loss.backward()
-        optimizer.step()
+    if use_torch_extension:
+        for inputs, targets in iterator:
+            inputs, targets = inputs.to(device), targets.to(device)
+            optimizer.zero_grad(set_to_none=True)
 
-        train_loss += loss.item()
-        _, predicted = outputs.max(1)
-        total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
+            with autocast(device_type=device, dtype=torch.float16):
+                outputs = net(inputs)
+                loss = criterion(outputs, targets)
 
-        descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(batch_idx, train_loss/(batch_idx+1), 100.*correct/total, correct, total)
-        iterator.set_description(descriptor)
-        batch_idx += 1
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+            train_loss += loss.item()
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
+
+            descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(batch_idx, train_loss/(batch_idx+1), 100.*correct/total, correct, total)
+            iterator.set_description(descriptor)
+            batch_idx += 1
+    else:
+        opt_level = "O1"
+        net, optimizer = amp.initialize(net, optimizer, opt_level)
+        net = nn.DataParallel(net)
+        for inputs, targets in iterator:
+            inputs, targets = inputs.to(device), targets.to(device)
+            optimizer.zero_grad(set_to_none=True)
+
+            outputs = net(inputs)
+            loss = criterion(outputs, targets)
+
+            with amp.scale_loss(loss, optimizer) as scaled_loss:
+                scaled_loss.backward()
+            optimizer.step()
+
+            train_loss += loss.item()
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
+
+            descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(batch_idx,
+                                                                                    train_loss / (batch_idx + 1),
+                                                                                    100. * correct / total, correct,
+                                                                                    total)
+            iterator.set_description(descriptor)
+            batch_idx += 1
 
 
 def test(epoch, testloader, net):
@@ -154,9 +194,12 @@ def test(epoch, testloader, net):
 
 if __name__ == "__main__":
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    assert device == "cuda"
     args = parse()
     trainloader, testloader, classes = data_preparation()
     model, criterion, optimizer, scheduler, best_acc, start_epoch = get_model(args, classes)
+    if use_torch_extension:
+        scaler = GradScaler()
     for epoch in range(start_epoch, start_epoch+args.epoch):
         train(epoch, trainloader, model, optimizer, criterion)
         test(epoch, testloader, model)
