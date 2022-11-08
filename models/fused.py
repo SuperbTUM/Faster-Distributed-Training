@@ -1,24 +1,21 @@
-# resnet.py
-
-"""resnet in pytorch
-[1] Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun.
-    Deep Residual Learning for Image Recognition
-    https://arxiv.org/abs/1512.03385v1
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import math
+import math 
+
+from models.resnet import ResNet
+
 
 # Only applicable for stride=1 at this time
 def unsqueeze_all(t):
-    # Helper function to unsqueeze all the dimensions that we reduce over
+    """ 
+    Helper function to unsqueeze 
+    all the dimensions that we reduce over
+    """
     return t[None, :, None, None]
 
-
-def convolution_backward(grad_out, X, weight, stride, padding):
+def convolution_layer_backward(grad_out, X, weight, stride, padding):
     grad_input = F.conv2d(X.transpose(0, 1), grad_out.transpose(0, 1), stride=stride, padding=padding).transpose(0, 1)
     grad_X = F.conv_transpose2d(grad_out, weight, stride=stride, padding=padding)
     if X.size() != grad_X.size():
@@ -33,16 +30,17 @@ def convolution_backward(grad_out, X, weight, stride, padding):
         grad_input = F.pad(grad_input, p2d, "constant", 0.)
     return grad_X, grad_input
 
-
 def batch_norm_backward(grad_out, X, sum, sqrt_var, N, eps):
-    # We use the formula: out = (X - mean(X)) / (sqrt(var(X)) + eps)
-    # in batch norm 2d's forward. To simplify our derivation, we follow the
-    # chain rule and compute the gradients as follows before accumulating
-    # them all into a final grad_input.
-    #  1) 'grad of out wrt var(X)' * 'grad of var(X) wrt X'
-    #  2) 'grad of out wrt mean(X)' * 'grad of mean(X) wrt X'
-    #  3) 'grad of out wrt X in the numerator' * 'grad of X wrt X'
-    # We then rewrite the formulas to use as few extra buffers as possible
+    """ 
+    We use the formula: out = (X - mean(X)) / (sqrt(var(X)) + eps)
+    in batch norm 2d's forward. To simplify our derivation, we follow the
+    chain rule and compute the gradients as follows before accumulating
+    them all into a final grad_input.
+     1) 'grad of out wrt var(X)' * 'grad of var(X) wrt X'
+     2) 'grad of out wrt mean(X)' * 'grad of mean(X) wrt X'
+     3) 'grad of out wrt X in the numerator' * 'grad of X wrt X'
+    We then rewrite the formulas to use as few extra buffers as possible 
+    """
     tmp = ((X - unsqueeze_all(sum) / N) * grad_out).sum(dim=(0, 2, 3))
     tmp *= -1
     d_denom = tmp / (sqrt_var + eps) ** 2  # d_denom = -num / denom**2
@@ -107,7 +105,7 @@ class FusedConvBN2DFunction(torch.autograd.Function):
         grad_out = batch_norm_backward(grad_out, X_conv_out, ctx.sum, ctx.sqrt_var,
                                        ctx.N, ctx.eps)
         # (6) Conv2d backward
-        grad_X, grad_input = convolution_backward(grad_out, X, conv_weight, ctx.stride, ctx.padding)
+        grad_X, grad_input = convolution_layer_backward(grad_out, X, conv_weight, ctx.stride, ctx.padding)
         return grad_X, grad_input, None, None, None, None, None
 
 
@@ -142,7 +140,7 @@ class FusedConvBN(nn.Module):
         self.conv_weight.data.uniform_(-stdv, stdv)
 
 
-class BasicBlock(nn.Module):
+class FusedBasicBlock(nn.Module):
     """Basic Block for resnet 18 and resnet 34
     """
 
@@ -161,13 +159,13 @@ class BasicBlock(nn.Module):
                 nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False),
                 nn.BatchNorm2d(out_channels),
                 nn.ReLU(inplace=True),
-                FusedConvBN(out_channels, out_channels * BasicBlock.expansion, kernel_size=3, padding=1)
+                FusedConvBN(out_channels, out_channels * FusedBasicBlock.expansion, kernel_size=3, padding=1)
             )
         else:
             self.residual_function = nn.Sequential(
                 FusedConvBN(in_channels, out_channels, kernel_size=3, padding=1),
                 nn.ReLU(inplace=True),
-                FusedConvBN(out_channels, out_channels * BasicBlock.expansion, kernel_size=3, padding=1)
+                FusedConvBN(out_channels, out_channels * FusedBasicBlock.expansion, kernel_size=3, padding=1)
             )
 
         # shortcut
@@ -175,17 +173,17 @@ class BasicBlock(nn.Module):
 
         # the shortcut output dimension is not the same with residual function
         # use 1*1 convolution to match the dimension
-        if stride != 1 or in_channels != BasicBlock.expansion * out_channels:
+        if stride != 1 or in_channels != FusedBasicBlock.expansion * out_channels:
             self.shortcut = nn.Sequential(
-                nn.Conv2d(in_channels, out_channels * BasicBlock.expansion, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(out_channels * BasicBlock.expansion)
+                nn.Conv2d(in_channels, out_channels * FusedBasicBlock.expansion, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels * FusedBasicBlock.expansion)
             )
 
     def forward(self, x):
         return nn.ReLU(inplace=True)(self.residual_function(x) + self.shortcut(x))
 
 
-class BottleNeck(nn.Module):
+class FusedBottleneck(nn.Module):
     """Residual block for resnet over 50 layers
     """
     expansion = 4
@@ -199,7 +197,7 @@ class BottleNeck(nn.Module):
                 nn.Conv2d(out_channels, out_channels, stride=stride, kernel_size=3, padding=1, bias=False),
                 nn.BatchNorm2d(out_channels),
                 nn.ReLU(inplace=True),
-                FusedConvBN(out_channels, out_channels * BottleNeck.expansion, kernel_size=1)
+                FusedConvBN(out_channels, out_channels * FusedBottleneck.expansion, kernel_size=1)
             )
         else:
             self.residual_function = nn.Sequential(
@@ -207,107 +205,36 @@ class BottleNeck(nn.Module):
                 nn.ReLU(inplace=True),
                 FusedConvBN(out_channels, out_channels, kernel_size=3, padding=1),
                 nn.ReLU(inplace=True),
-                FusedConvBN(out_channels, out_channels * BottleNeck.expansion, kernel_size=1)
+                FusedConvBN(out_channels, out_channels * FusedBottleneck.expansion, kernel_size=1)
             )
 
         self.shortcut = nn.Sequential()
 
-        if stride != 1 or in_channels != out_channels * BottleNeck.expansion:
+        if stride != 1 or in_channels != out_channels * FusedBottleneck.expansion:
             self.shortcut = nn.Sequential(
-                nn.Conv2d(in_channels, out_channels * BottleNeck.expansion, stride=stride, kernel_size=1, bias=False),
-                nn.BatchNorm2d(out_channels * BottleNeck.expansion)
+                nn.Conv2d(in_channels, out_channels * FusedBottleneck.expansion, stride=stride, kernel_size=1, bias=False),
+                nn.BatchNorm2d(out_channels * FusedBottleneck.expansion)
             )
 
     def forward(self, x):
         return nn.ReLU(inplace=True)(self.residual_function(x) + self.shortcut(x))
 
 
-class ResNet(nn.Module):
-
-    def __init__(self, block, num_block, num_classes=100):
-        super().__init__()
-
-        self.in_channels = 64
-
-        self.conv1 = nn.Sequential(
-            FusedConvBN(3, 64, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True))
-        # we use a different inputsize than the original paper
-        # so conv2_x's stride is 1
-        self.conv2_x = self._make_layer(block, 64, num_block[0], 1)
-        self.conv3_x = self._make_layer(block, 128, num_block[1], 2)
-        self.conv4_x = self._make_layer(block, 256, num_block[2], 2)
-        self.conv5_x = self._make_layer(block, 512, num_block[3], 2)
-        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
-
-    def _make_layer(self, block, out_channels, num_blocks, stride):
-        """make resnet layers(by layer i didnt mean this 'layer' was the
-        same as a neuron netowork layer, ex. conv layer), one layer may
-        contain more than one residual block
-        Args:
-            block: block type, basic block or bottle neck block
-            out_channels: output depth channel number of this layer
-            num_blocks: how many blocks per layer
-            stride: the stride of the first block of this layer
-        Return:
-            return a resnet layer
-        """
-
-        # we have num_block blocks per layer, the first block
-        # could be 1 or 2, other blocks would always be 1
-        strides = [stride] + [1] * (num_blocks - 1)
-        layers = []
-        for stride in strides:
-            layers.append(block(self.in_channels, out_channels, stride))
-            self.in_channels = out_channels * block.expansion
-
-        return nn.Sequential(*layers)
-
-    def forward(self, x):
-        output = self.conv1(x)
-        output = self.conv2_x(output)
-        output = self.conv3_x(output)
-        output = self.conv4_x(output)
-        output = self.conv5_x(output)
-        output = self.avg_pool(output)
-        output = output.view(output.size(0), -1)
-        output = self.fc(output)
-
-        return output
+def FusedResNet18():
+    return ResNet(FusedBasicBlock, [2, 2, 2, 2])
 
 
-def resnet18(num_classes=10):
-    """ return a ResNet 18 object
-    """
-    return ResNet(BasicBlock, [2, 2, 2, 2], num_classes=num_classes)
+def FusedResNet34():
+    return ResNet(FusedBasicBlock, [3, 4, 6, 3])
 
 
-def resnet34(num_classes=10):
-    """ return a ResNet 34 object
-    """
-    return ResNet(BasicBlock, [3, 4, 6, 3], num_classes=num_classes)
+def FusedResNet50():
+    return ResNet(FusedBottleneck, [3, 4, 6, 3])
 
 
-def resnet50(num_classes=10):
-    """ return a ResNet 50 object
-    """
-    return ResNet(BottleNeck, [3, 4, 6, 3], num_classes=num_classes)
+def FusedResNet101():
+    return ResNet(FusedBottleneck, [3, 4, 23, 3])
 
 
-def resnet101(num_classes=10):
-    """ return a ResNet 101 object
-    """
-    return ResNet(BottleNeck, [3, 4, 23, 3], num_classes=num_classes)
-
-
-def resnet152(num_classes=10):
-    """ return a ResNet 152 object
-    """
-    return ResNet(BottleNeck, [3, 8, 36, 3], num_classes=num_classes)
-
-
-if __name__ == "__main__":
-    weight = torch.rand(5, 3, 3, 3, requires_grad=True, dtype=torch.double)
-    X = torch.rand(2, 3, 28, 28, requires_grad=True, dtype=torch.double)
-    assert torch.autograd.gradcheck(FusedConvBN2DFunction.apply, (X, weight, 1, 1))
+def FusedResNet152():
+    return ResNet(FusedBottleneck, [3, 8, 36, 3])
