@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.autograd import Variable
 import torch.backends.cudnn as cudnn
 
 import torchvision
@@ -34,6 +35,7 @@ def parse():
     parser.add_argument('--resume', '-r', action='store_true',
                         help='resume from checkpoint')
     parser.add_argument("--epoch", default=50, type=int, help="epoch num for training")
+    parser.add_argument("--alpha", default=0.99, type=float, help="alpha value for beta distribution")
     args = parser.parse_args()
     return args
 
@@ -67,6 +69,25 @@ def data_preparation():
     return trainloader, testloader, classes
 
 
+def mixup_data(x, y, alpha=.99):
+    '''Returns mixed inputs, pairs of targets, and lambda'''
+    if alpha > 0:
+        distri = torch.distributions.beta.Beta(alpha, alpha)
+        lam = distri.sample().item()
+    else:
+        lam = alpha
+
+    batch_size = x.size(0)
+    index = torch.randperm(batch_size, device=device)
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
+
+
+def mixup_criterion(criterion, pred, y_a, y_b, lam):
+    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+
+
 def get_model(args, classes):
     # Model
     print('==> Building model..')
@@ -96,7 +117,7 @@ def get_model(args, classes):
 
 
 # Training
-def train(epoch, trainloader, net, optimizer, criterion):
+def train(epoch, trainloader, net, optimizer, criterion, alpha):
     print('\nEpoch: %d' % epoch)
     net.train()
     train_loss = 0
@@ -107,11 +128,17 @@ def train(epoch, trainloader, net, optimizer, criterion):
     if use_torch_extension:
         for inputs, targets in iterator:
             inputs, targets = inputs.to(device), targets.to(device)
+            inputs, targets_a, targets_b, lam = mixup_data(inputs, targets,
+                                                           alpha)
+            inputs, targets_a, targets_b = map(Variable, (inputs,
+                                                          targets_a, targets_b))
+
             optimizer.zero_grad(set_to_none=True)
 
             with autocast(device_type=device, dtype=torch.float16):
                 outputs = net(inputs)
-                loss = criterion(outputs, targets)
+                # loss = criterion(outputs, targets)
+                loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -131,10 +158,15 @@ def train(epoch, trainloader, net, optimizer, criterion):
         net = nn.DataParallel(net)
         for inputs, targets in iterator:
             inputs, targets = inputs.to(device), targets.to(device)
+            inputs, targets_a, targets_b, lam = mixup_data(inputs, targets,
+                                                           alpha)
+            inputs, targets_a, targets_b = map(Variable, (inputs,
+                                                          targets_a, targets_b))
             optimizer.zero_grad(set_to_none=True)
 
             outputs = net(inputs)
-            loss = criterion(outputs, targets)
+            # loss = criterion(outputs, targets)
+            loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
 
             with amp.scale_loss(loss, optimizer) as scaled_loss:
                 scaled_loss.backward()
@@ -201,6 +233,6 @@ if __name__ == "__main__":
     if use_torch_extension:
         scaler = GradScaler()
     for epoch in range(start_epoch, start_epoch+args.epoch):
-        train(epoch, trainloader, model, optimizer, criterion)
+        train(epoch, trainloader, model, optimizer, criterion, args.alpha)
         test(epoch, testloader, model)
         scheduler.step()
