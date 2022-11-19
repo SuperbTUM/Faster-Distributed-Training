@@ -84,6 +84,15 @@ def mixup_data(x, y, alpha=.99):
     return mixed_x, y_a, y_b, lam
 
 
+def mixup_data_meta(x, y):
+    lam = nn.Parameter(torch.rand(1)).to(device)
+    batch_size = x.size(0)
+    index = torch.randperm(batch_size, device=device)
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
+
+
 def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
@@ -128,8 +137,7 @@ def train(epoch, trainloader, net, optimizer, criterion, alpha):
     if use_torch_extension:
         for inputs, targets in iterator:
             inputs, targets = inputs.to(device), targets.to(device)
-            inputs, targets_a, targets_b, lam = mixup_data(inputs, targets,
-                                                           alpha)
+            inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets)
             inputs, targets_a, targets_b = map(Variable, (inputs,
                                                           targets_a, targets_b))
 

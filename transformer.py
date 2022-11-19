@@ -243,8 +243,7 @@ class MLPScratch(torch.autograd.Function):
     @staticmethod
     @torch.cuda.amp.custom_fwd
     def forward(ctx, X, W1, b1, W2, b2):
-        assert X.ndim == 2
-        ctx.save_for_backward(X, W1, b1, W2, b2)
+        ctx.save_for_backward(X, W1, b1, W2)
         linear = F.linear(X, W1, b1)
         activated = F.relu(linear)
         output = F.linear(activated, W2, b2)
@@ -253,20 +252,34 @@ class MLPScratch(torch.autograd.Function):
     @staticmethod
     @torch.cuda.amp.custom_bwd
     def backward(ctx, grad_out):
-        X, W1, b1, W2, b2 = ctx.saved_tensors
+        X, W1, b1, W2 = ctx.saved_tensors
         linear = F.linear(X, W1, b1)
         activated = F.relu(linear)
         # output = F.linear(activated, W2, b2)
 
         grad_b2 = torch.mean(grad_out, dim=0, keepdim=True)
-        grad_W2 = grad_out.T @ activated
+        if grad_out.ndim == 2:
+            grad_out_transpose = grad_out.T
+        else:
+            grad_out_transpose = grad_out.permute(*(i for i in range(grad_out.ndim - 2)),
+                                                  grad_out.ndim - 1, grad_out.ndim - 2).contiguous()
+        grad_W2 = grad_out_transpose @ activated
         grad_activated = grad_out @ W2
-        grad_before_activated = torch.empty_like(grad_activated)
+        grad_activated_shape = grad_activated.size()
+        grad_activated_flattened = grad_activated.view(-1)
+        grad_before_activated = torch.empty_like(grad_activated_flattened)
         for i in range(grad_before_activated.size(0)):
-            for j in range(grad_before_activated.size(1)):
-                grad_before_activated[i, j] = grad_activated[i, j] if grad_activated[i, j] > 0 else 0
+            grad_before_activated[i] = grad_activated_flattened[i] if grad_activated_flattened[i] > 0 else 0
+        grad_before_activated = grad_before_activated.reshape(grad_activated_shape)
         grad_b1 = torch.mean(grad_before_activated, dim=0, keepdim=True)
-        grad_W1 = grad_before_activated.T @ X
+
+        if grad_out.ndim == 2:
+            grad_before_activated_transpose = grad_before_activated.T
+        else:
+            grad_before_activated_transpose = grad_before_activated.permute(
+                *(i for i in range(grad_before_activated.ndim - 2)),
+                grad_before_activated.ndim - 1, grad_before_activated.ndim - 2).contiguous()
+        grad_W1 = grad_before_activated_transpose @ X
 
         grad_X = grad_before_activated @ W1
         return grad_X, grad_W1, grad_b1, grad_W2, grad_b2

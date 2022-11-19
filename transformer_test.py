@@ -92,6 +92,8 @@ def load_model(args, num_class, vocab):
     # get model
     model = Transformer(num_class, vocab)
     model = model.to(device)
+    model = nn.DataParallel(model)
+    cudnn.benchmark = True
 
     best_acc = 1. / num_class
     start_epoch = 0
@@ -130,7 +132,6 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
 
 def train(dataloader, model, criterion, optimizer, alpha):
     model.train()
-    cudnn.benchmark = True
     correct = 0
     total = 0
     batch_idx = 0
