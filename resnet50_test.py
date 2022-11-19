@@ -36,11 +36,13 @@ def parse():
                         help='resume from checkpoint')
     parser.add_argument("--epoch", default=50, type=int, help="epoch num for training")
     parser.add_argument("--alpha", default=0.99, type=float, help="alpha value for beta distribution")
+    parser.add_argument("--bs", default=128, type=int)
+    parser.add_argument("--workers", default=2, type=int)
     args = parser.parse_args()
     return args
 
 
-def data_preparation():
+def data_preparation(batch_size, workers):
     # Data
     print('==> Preparing data..')
     transform_train = transforms.Compose([
@@ -58,12 +60,12 @@ def data_preparation():
     trainset = torchvision.datasets.CIFAR10(
         root='./data', train=True, download=True, transform=transform_train)
     trainloader = DataLoaderX(
-        trainset, batch_size=128, shuffle=True, num_workers=4, pin_memory=True, persistent_workers=True)
+        trainset, batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True, persistent_workers=True)
 
     testset = torchvision.datasets.CIFAR10(
         root='./data', train=False, download=True, transform=transform_test)
     testloader = DataLoaderX(
-        testset, batch_size=100, shuffle=False, num_workers=4, pin_memory=True, persistent_workers=True)
+        testset, batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True, persistent_workers=True)
     classes = ('plane', 'car', 'bird', 'cat', 'deer',
                'dog', 'frog', 'horse', 'ship', 'truck')
     return trainloader, testloader, classes
@@ -85,7 +87,7 @@ def mixup_data(x, y, alpha=.99):
 
 
 def mixup_data_meta(x, y):
-    lam = nn.Parameter(torch.rand(1)).to(device)
+    lam = torch.sigmoid(nn.Parameter(torch.rand(1, device=device)))
     batch_size = x.size(0)
     index = torch.randperm(batch_size, device=device)
     mixed_x = lam * x + (1 - lam) * x[index, :]
@@ -126,7 +128,7 @@ def get_model(args, classes):
 
 
 # Training
-def train(epoch, trainloader, net, optimizer, criterion, alpha):
+def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning):
     print('\nEpoch: %d' % epoch)
     net.train()
     train_loss = 0
@@ -137,7 +139,10 @@ def train(epoch, trainloader, net, optimizer, criterion, alpha):
     if use_torch_extension:
         for inputs, targets in iterator:
             inputs, targets = inputs.to(device), targets.to(device)
-            inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets)
+            if meta_learning:
+                inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets)
+            else:
+                inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, alpha)
             inputs, targets_a, targets_b = map(Variable, (inputs,
                                                           targets_a, targets_b))
 
@@ -166,8 +171,11 @@ def train(epoch, trainloader, net, optimizer, criterion, alpha):
         net = nn.DataParallel(net)
         for inputs, targets in iterator:
             inputs, targets = inputs.to(device), targets.to(device)
-            inputs, targets_a, targets_b, lam = mixup_data(inputs, targets,
-                                                           alpha)
+            if meta_learning:
+                inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets)
+            else:
+                inputs, targets_a, targets_b, lam = mixup_data(inputs, targets,
+                                                               alpha)
             inputs, targets_a, targets_b = map(Variable, (inputs,
                                                           targets_a, targets_b))
             optimizer.zero_grad(set_to_none=True)
@@ -236,11 +244,12 @@ if __name__ == "__main__":
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     assert device == "cuda"
     args = parse()
-    trainloader, testloader, classes = data_preparation()
+    trainloader, testloader, classes = data_preparation(args.bs, args.workers)
     model, criterion, optimizer, scheduler, best_acc, start_epoch = get_model(args, classes)
+    meta_learning = False
     if use_torch_extension:
         scaler = GradScaler()
     for epoch in range(start_epoch, start_epoch+args.epoch):
-        train(epoch, trainloader, model, optimizer, criterion, args.alpha)
+        train(epoch, trainloader, model, optimizer, criterion, args.alpha, meta_learning)
         test(epoch, testloader, model)
         scheduler.step()
