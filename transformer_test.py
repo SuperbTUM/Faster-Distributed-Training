@@ -18,6 +18,12 @@ from prefetch_generator import BackgroundGenerator
 from torch import autocast
 from torch.cuda.amp import GradScaler
 
+from torch_ort import ORTModule
+"""
+from torch_ort import ORTModule
+model = ORTModule(model)
+"""
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 # used to create key-data pair for map-style dataset
 i = -1
@@ -93,6 +99,7 @@ def load_model(args, num_class, vocab):
     model = Transformer(num_class, vocab)
     model = model.to(device)
     model = nn.DataParallel(model)
+    # model = ORTModule(model)
     cudnn.benchmark = True
 
     best_acc = 1. / num_class

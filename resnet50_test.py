@@ -38,6 +38,7 @@ def parse():
     parser.add_argument("--alpha", default=0.99, type=float, help="alpha value for beta distribution")
     parser.add_argument("--bs", default=128, type=int)
     parser.add_argument("--workers", default=2, type=int)
+    parser.add_argument("--meta_learning", action="store_true", help="adaptive lambda in mixup")
     args = parser.parse_args()
     return args
 
@@ -95,8 +96,38 @@ def mixup_data_meta(x, y):
     return mixed_x, y_a, y_b, lam
 
 
+# class lam_meta(torch.autograd.Function):
+#     @staticmethod
+#     @torch.cuda.amp.custom_fwd
+#     def forward(ctx, inputs, targets, lam):
+#         batch_size = inputs.size(0)
+#         index = torch.randperm(batch_size, device=device)
+#         mixed_x = lam * inputs + (1 - lam) * inputs[index, :]
+#         y_a, y_b = targets, targets[index]
+#         return mixed_x, y_a, y_b, lam
+#
+#     @staticmethod
+#     @torch.cuda.amp.custom_bwd
+#     def backward(ctx, grad_out):
+#         return None, None, None, grad_out
+#
+#
+# class lam_meta_module(nn.Module):
+#     def __init__(self, batch_size):
+#         super(lam_meta_module, self).__init__()
+#         self.lam = torch.sigmoid(nn.Parameter(torch.rand(batch_size, 1, 1, 1, device=device)))
+#
+#     def forward(self, inputs, targets):
+#         return lam_meta.apply(inputs, targets, self.lam)
+
+
 def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+
+
+def mixup_criterion_meta(criterion, pred, y_a, y_b, lam):
+    criterion.reduction = "none"
+    return torch.mean(lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b))
 
 
 def get_model(args, classes):
@@ -151,7 +182,10 @@ def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning):
             with autocast(device_type=device, dtype=torch.float16):
                 outputs = net(inputs)
                 # loss = criterion(outputs, targets)
-                loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
+                if meta_learning:
+                    loss = mixup_criterion_meta(criterion, outputs, targets_a, targets_b, lam)
+                else:
+                    loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -182,7 +216,10 @@ def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning):
 
             outputs = net(inputs)
             # loss = criterion(outputs, targets)
-            loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
+            if meta_learning:
+                loss = mixup_criterion_meta(criterion, outputs, targets_a, targets_b, lam)
+            else:
+                loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
 
             with amp.scale_loss(loss, optimizer) as scaled_loss:
                 scaled_loss.backward()
@@ -208,6 +245,7 @@ def test(epoch, testloader, net):
     correct = 0
     total = 0
     batch_idx = 0
+    criterion.reduce = "mean"
     with torch.no_grad():
         iterator = tqdm(testloader)
         for inputs, targets in iterator:
@@ -246,10 +284,9 @@ if __name__ == "__main__":
     args = parse()
     trainloader, testloader, classes = data_preparation(args.bs, args.workers)
     model, criterion, optimizer, scheduler, best_acc, start_epoch = get_model(args, classes)
-    meta_learning = False
     if use_torch_extension:
         scaler = GradScaler()
     for epoch in range(start_epoch, start_epoch+args.epoch):
-        train(epoch, trainloader, model, optimizer, criterion, args.alpha, meta_learning)
+        train(epoch, trainloader, model, optimizer, criterion, args.alpha, args.meta_learning)
         test(epoch, testloader, model)
         scheduler.step()
