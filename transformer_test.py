@@ -18,7 +18,7 @@ from prefetch_generator import BackgroundGenerator
 from torch import autocast
 from torch.cuda.amp import GradScaler
 
-from torch_ort import ORTModule
+# from torch_ort import ORTModule
 """
 from torch_ort import ORTModule
 model = ORTModule(model)
@@ -100,6 +100,7 @@ def load_model(args, num_class, vocab):
     model = model.to(device)
     model = nn.DataParallel(model)
     # model = ORTModule(model)
+    cudnn.enabled = True
     cudnn.benchmark = True
 
     best_acc = 1. / num_class
@@ -143,6 +144,7 @@ def train(dataloader, model, criterion, optimizer, alpha):
     total = 0
     batch_idx = 0
     iterator = tqdm(dataloader)
+    peak_memory_allocated = 0
     for tokens, labels, masks in iterator:
         labels = labels.to(device) - 1
         tokens = tokens.to(device)
@@ -176,6 +178,10 @@ def train(dataloader, model, criterion, optimizer, alpha):
                                                                                 total)
         iterator.set_description(descriptor)
         batch_idx += 1
+
+    peak_memory_allocated += torch.cuda.max_memory_allocated()
+    torch.cuda.reset_peak_memory_stats()
+    print("Peak memory allocated: {:.2f} GB".format(peak_memory_allocated / 1024 ** 3))
 
 
 def test(epoch, dataloader, model):

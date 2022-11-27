@@ -137,6 +137,7 @@ def get_model(args, classes):
     if device == 'cuda':
         if use_torch_extension:
             net = torch.nn.DataParallel(net)
+        cudnn.enabled = True
         cudnn.benchmark = True
 
     best_acc = 0  # best test accuracy
@@ -167,6 +168,7 @@ def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning):
     total = 0
     batch_idx = 0
     iterator = tqdm(trainloader)
+    peak_memory_allocated = 0
     if use_torch_extension:
         for inputs, targets in iterator:
             inputs, targets = inputs.to(device), targets.to(device)
@@ -236,6 +238,9 @@ def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning):
                                                                                     total)
             iterator.set_description(descriptor)
             batch_idx += 1
+    peak_memory_allocated += torch.cuda.max_memory_allocated()
+    torch.cuda.reset_peak_memory_stats()
+    print("Peak memory allocated: {:.2f} GB".format(peak_memory_allocated/1024 ** 3))
 
 
 def test(epoch, testloader, net):
@@ -282,6 +287,7 @@ if __name__ == "__main__":
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     assert device == "cuda"
     args = parse()
+    torch.manual_seed(123456)
     trainloader, testloader, classes = data_preparation(args.bs, args.workers)
     model, criterion, optimizer, scheduler, best_acc, start_epoch = get_model(args, classes)
     if use_torch_extension:
