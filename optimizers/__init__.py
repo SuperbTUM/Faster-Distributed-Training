@@ -4,6 +4,8 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 
+from optimizers.ngd import NGD
+
 
 OPTIMIZERS = {
     "SGD": optim.SGD,
@@ -11,9 +13,10 @@ OPTIMIZERS = {
     "Adam": optim.Adam,
     "Adagrad": optim.Adagrad,
     "Adadelta": optim.Adadelta,
+    "NGD": NGD
 }
 
-def Optimizer(model, conf):
+def Optimizer(model: nn.Module, conf: object):
     if conf.optimizer == "SGD":
         return OPTIMIZERS[conf.optimizer](
             model.parameters(), 
@@ -41,6 +44,13 @@ def Optimizer(model, conf):
         return OPTIMIZERS[conf.optimizer](
             model.parameters(), 
             lr=conf.learning_rate,
+            weight_decay=conf.weight_decay
+        )
+    elif conf.optimizer == "NGD":
+        return OPTIMIZERS[conf.optimizer](
+            model.parameters(), 
+            lr=conf.learning_rate,
+            momentum=conf.momentum,
             weight_decay=conf.weight_decay
         )
     else:
