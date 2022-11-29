@@ -4,6 +4,8 @@ import math
 from torch.autograd import Variable
 from torch.nn import functional as F
 
+from torch import autocast
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Transformer(nn.Module):
@@ -109,7 +111,8 @@ class Embeddings(nn.Module):
 
     def forward(self, x):
         positions = self.pos_embedding(torch.arange(start=0, end=self.maxlen, device=device))[:x.size(1), :]
-        tokens = self.token_embedding(x)
+        with autocast(device_type="cuda", enabled=False):
+            tokens = self.token_embedding(x.long())
         return (positions + tokens) * math.sqrt(self.d_model)
 
 class PositionalWiseFFN(nn.Module):

@@ -88,8 +88,8 @@ def mixup_data(x, y, alpha=.99):
 
 
 def mixup_data_meta(x, y):
-    lam = torch.sigmoid(nn.Parameter(torch.rand(1, device=device)))
     batch_size = x.size(0)
+    lam = torch.sigmoid(nn.Parameter(torch.rand(batch_size, 1, 1, 1, device=device)))
     index = torch.randperm(batch_size, device=device)
     mixed_x = lam * x + (1 - lam) * x[index, :]
     y_a, y_b = y, y[index]
