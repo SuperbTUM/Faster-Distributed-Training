@@ -20,14 +20,17 @@ def cleanup():
 
 
 def distributed_wrapper(rank, func, world_size, *func_args):
-    assert len(func_args) == 7
-    epoch, trainloader, model, optimizer, criterion, alpha, meta_learning = func_args
+    """
+    This is an example function
+    """
+    assert len(func_args) == 9
+    start_epoch, epoch_total, train_dl, test_dl, model, criterion, optimizer, scheduler, alpha = func_args
     setup(rank, world_size)
     model = model.to(rank)
     ddp_model = DDP(model, device_ids=[rank], output_device=rank)
-    func(epoch, trainloader, ddp_model, optimizer, criterion, alpha, meta_learning)
+    func(start_epoch, epoch_total, train_dl, test_dl, ddp_model, criterion, optimizer, scheduler, alpha)
     cleanup()
 
 
-def distributed_warpper_runner(distributed_warpper, func, world_size, *func_args):
-    mp.spawn(distributed_warpper, args=(func, world_size, *func_args, ), nprocs=world_size, join=True)
+def distributed_warpper_runner(distributed_wrapper, world_size, *func_args):
+    mp.spawn(distributed_wrapper, args=(world_size, *func_args, ), nprocs=world_size, join=True)

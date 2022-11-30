@@ -292,6 +292,7 @@ if __name__ == "__main__":
     model, criterion, optimizer, scheduler, best_acc, start_epoch = get_model(args, classes)
     if use_torch_extension:
         scaler = GradScaler()
+    torch.cuda.empty_cache()
     for epoch in range(start_epoch, start_epoch+args.epoch):
         train(epoch, trainloader, model, optimizer, criterion, args.alpha, args.meta_learning)
         test(epoch, testloader, model)

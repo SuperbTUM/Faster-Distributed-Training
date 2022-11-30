@@ -6,17 +6,23 @@ from torchtext.datasets import AG_NEWS
 from torch.utils.data import DataLoader
 from torch.backends import cudnn
 from torch.autograd import Variable
+from torch import autocast
+from torch.cuda.amp import GradScaler
 
 from transformers import AutoTokenizer
 from transformer import Transformer
 
 import os
+import dill as pickle
 import argparse
 from tqdm import tqdm
 from prefetch_generator import BackgroundGenerator
 
-from torch import autocast
-from torch.cuda.amp import GradScaler
+import warnings
+
+warnings.filterwarnings("ignore")
+
+from utils import *
 
 # from torch_ort import ORTModule
 """
@@ -27,6 +33,7 @@ model = ORTModule(model)
 device = "cuda" if torch.cuda.is_available() else "cpu"
 # used to create key-data pair for map-style dataset
 i = -1
+
 
 def transformation(data):
     global i
@@ -154,12 +161,13 @@ def train(dataloader, model, criterion, optimizer, alpha):
                                                      alpha)
         tokens, labels_a, labels_b = map(Variable, (tokens, labels_a, labels_b))
 
+        # compute gradient and do SGD step
+        optimizer.zero_grad(set_to_none=True)
+
         with autocast(device_type=device, dtype=torch.float16):
             logits = model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
             # loss = criterion(logits, labels)
             loss = mixup_criterion(criterion, logits, labels_a, labels_b, lam)
-        # compute gradient and do SGD step
-        optimizer.zero_grad(set_to_none=True)
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -229,18 +237,47 @@ def parse():
     parser.add_argument("--resume", help="continue training", action="store_true")
     parser.add_argument("--workers", help="number of workers", default=2, type=int)
     parser.add_argument("--alpha", help="alpha for beta distribution", default=0.99, type=float)
+    parser.add_argument("--distributed", help="whether to turn on distributed training", action="store_true")
     args = parser.parse_args()
     return args
 
 
+args = parse()
+num_class = 4
+train_dl, test_dl, vocab = load_dataloader(args.batch_size, args.workers)
+model, criterion, optimizer, scheduler, best_acc, start_epoch = load_model(args, num_class, vocab)
+
+epochs_total = args.epoch
+alpha = args.alpha
+
+
+def main_ddp(rank, world_size):
+    setup(rank, world_size)
+    ddp_model = DDP(model, device_ids=[rank], output_device=rank)
+    for epoch in range(start_epoch, epochs_total):
+        train(train_dl, ddp_model, criterion, optimizer, alpha)
+        test(epoch, test_dl, ddp_model)
+        scheduler.step()
+    cleanup()
+
+
 if __name__ == "__main__":
     assert device == "cuda"
-    args = parse()
-    num_class = 4
-    train_dl, test_dl, vocab = load_dataloader(args.batch_size, args.workers)
-    model, criterion, optimizer, scheduler, best_acc, start_epoch = load_model(args, num_class, vocab)
+    # args = parse()
+    # num_class = 4
+    # train_dl, test_dl, vocab = load_dataloader(args.batch_size, args.workers)
+    # model, criterion, optimizer, scheduler, best_acc, start_epoch = load_model(args, num_class, vocab)
     scaler = GradScaler()
-    for epoch in range(start_epoch, args.epoch):
-        train(train_dl, model, criterion, optimizer, args.alpha)
-        test(epoch, test_dl, model)
-        scheduler.step()
+    torch.cuda.empty_cache()
+
+    if not args.distributed:
+        for epoch in range(start_epoch, epochs_total):
+            train(train_dl, model, criterion, optimizer, alpha)
+            test(epoch, test_dl, model)
+            scheduler.step()
+
+    else:
+        # -----------------distributed training---------------------- #
+
+        world_size = torch.cuda.device_count()
+        distributed_warpper_runner(main_ddp, world_size)
