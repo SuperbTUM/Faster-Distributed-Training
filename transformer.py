@@ -6,7 +6,7 @@ from torch.nn import functional as F
 
 from torch import autocast
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class Transformer(nn.Module):
@@ -92,7 +92,9 @@ class PositionalEncoding(nn.Module):
         pe[:, 0::2] = torch.sin(position * scale)
         pe[:, 1::2] = torch.cos(position * scale)
         pe = pe.unsqueeze(0)
-        self.register_buffer("pe", pe)
+        # self.register_buffer("pe", pe)
+        self.pe = nn.Parameter(pe, requires_grad=False)
+        # self.register_parameter("pe", pe)
 
     def forward(self, x):
         x = x + Variable(self.pe[:, :x.size(1)], requires_grad=False)
@@ -117,7 +119,7 @@ class Embeddings(nn.Module):
 
     def forward(self, x):
         positions = self.pos_embedding(torch.arange(start=0, end=self.maxlen, device=device))[:x.size(1), :]
-        with autocast(device_type="cuda", enabled=False):
+        with autocast(device_type=device, enabled=False):
             tokens = self.token_embedding(x.long())
         return (positions + tokens) * math.sqrt(self.d_model)
 

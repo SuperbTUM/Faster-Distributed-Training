@@ -23,6 +23,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from utils import *
+from torch.utils.data.distributed import DistributedSampler
 
 # from torch_ort import ORTModule
 """
@@ -74,14 +75,24 @@ class AG_NEWS_DATASET:
 
         return batch_sentence, batch_label, attn_mask
 
-    def load_data(self, num_workers=2):
-        train_dl = DataLoaderX(self.train_ds,
-                               batch_size=self.batch_size,
-                               shuffle=True,
-                               collate_fn=self.generate_batch,
-                               num_workers=num_workers,
-                               pin_memory=True,
-                               persistent_workers=True)
+    def load_data(self, distributed=False, num_workers=2):
+        if distributed:
+            train_sampler = DistributedSampler(dataset=self.train_ds)
+            train_dl = DataLoaderX(dataset=self.train_ds,
+                                   batch_size=self.batch_size,
+                                   sampler=train_sampler,
+                                   collate_fn=self.generate_batch,
+                                   num_workers=num_workers,
+                                   pin_memory=True,
+                                   persistent_workers=True)
+        else:
+            train_dl = DataLoaderX(self.train_ds,
+                                   batch_size=self.batch_size,
+                                   shuffle=True,
+                                   collate_fn=self.generate_batch,
+                                   num_workers=num_workers,
+                                   pin_memory=True,
+                                   persistent_workers=True)
         test_dl = DataLoaderX(self.test_ds,
                               batch_size=self.batch_size,
                               shuffle=False,
@@ -93,10 +104,28 @@ class AG_NEWS_DATASET:
         return train_dl, test_dl
 
 
+def get_tokenizer_size():
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    return tokenizer.vocab_size
+
+
 def load_dataloader(batch_size, num_workers):
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    train_dl, test_dl = AG_NEWS_DATASET(tokenizer, batch_size=batch_size).load_data(num_workers)
-    return train_dl, test_dl, tokenizer.vocab_size
+    train_dl, test_dl = AG_NEWS_DATASET(tokenizer, batch_size=batch_size).load_data(args.distributed, num_workers)
+    return train_dl, test_dl
+
+
+def load_best_performance(args, num_class):
+    best_acc = 1. / num_class
+    start_epoch = 0
+    if args.resume:
+        # Load checkpoint.
+        print('==> Resuming from checkpoint..')
+        assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
+        checkpoint = torch.load('./checkpoint/ckpt.pth')
+        best_acc = max(best_acc, checkpoint['acc'])
+        start_epoch = checkpoint['epoch']
+    return best_acc, start_epoch
 
 
 def load_model(args, num_class, vocab):
@@ -105,25 +134,19 @@ def load_model(args, num_class, vocab):
     # get model
     model = Transformer(num_class, vocab)
     model = model.to(device)
-    model = nn.DataParallel(model)
+    if not args.distributed:
+        model = nn.DataParallel(model)
     # model = ORTModule(model)
     cudnn.enabled = True
     cudnn.benchmark = True
 
-    best_acc = 1. / num_class
-    start_epoch = 0
     if args.resume:
         # Load checkpoint.
         print('==> Resuming from checkpoint..')
         assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
         checkpoint = torch.load('./checkpoint/ckpt.pth')
         model.load_state_dict(checkpoint['net'])
-        best_acc = checkpoint['acc']
-        start_epoch = checkpoint['epoch']
-    # baseline training config
-    optim = SGD(model.parameters(), lr=args.lr)
-    scheduler = MultiStepLR(optim, milestones=[10, 15], gamma=0.1)
-    return model, loss_fn, optim, scheduler, best_acc, start_epoch
+    return model, loss_fn
 
 
 def mixup_data(x, y, alpha=.99):
@@ -145,54 +168,67 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
 
-def train(dataloader, model, criterion, optimizer, alpha):
+def train(model, criterion, alpha, rank=0):
+    ##
+    train_dl, test_dl = load_dataloader(args.batch_size, args.workers)
+
     model.train()
     correct = 0
     total = 0
     batch_idx = 0
-    iterator = tqdm(dataloader)
+    iterator = tqdm(train_dl)
     peak_memory_allocated = 0
-    for tokens, labels, masks in iterator:
-        labels = labels.to(device) - 1
-        tokens = tokens.to(device)
-        masks = masks.to(device)
+    ##
+    optimizer = SGD(model.parameters(), lr=args.lr)
+    scheduler = MultiStepLR(optimizer, milestones=[10, 15], gamma=0.1)
+    for epoch in range(start_epoch, epochs_total):
+        for tokens, labels, masks in iterator:
+            labels = labels.to(device) - 1
+            tokens = tokens.to(device)
+            masks = masks.to(device)
+            if args.distributed:
+                labels = labels.to(rank)
+                tokens = tokens.to(rank)
+                masks = masks.to(rank)
 
-        tokens, labels_a, labels_b, lam = mixup_data(tokens, labels,
-                                                     alpha)
-        tokens, labels_a, labels_b = map(Variable, (tokens, labels_a, labels_b))
+            tokens, labels_a, labels_b, lam = mixup_data(tokens, labels,
+                                                         alpha)
+            tokens, labels_a, labels_b = map(Variable, (tokens, labels_a, labels_b))
 
-        # compute gradient and do SGD step
-        optimizer.zero_grad(set_to_none=True)
+            # compute gradient and do SGD step
+            optimizer.zero_grad(set_to_none=True)
 
-        with autocast(device_type=device, dtype=torch.float16):
-            logits = model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
-            # loss = criterion(logits, labels)
-            loss = mixup_criterion(criterion, logits, labels_a, labels_b, lam)
+            with autocast(device_type=device, dtype=torch.float16):
+                logits = model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
+                # loss = criterion(logits, labels)
+                loss = mixup_criterion(criterion, logits, labels_a, labels_b, lam)
 
-        scaler.scale(loss).backward()
-        scaler.unscale_(optimizer)
-        # Since the gradients of optimizer's assigned params are unscaled, clips as usual:
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 10.)
-        scaler.step(optimizer)
-        scaler.update()
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            # Since the gradients of optimizer's assigned params are unscaled, clips as usual:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 10.)
+            scaler.step(optimizer)
+            scaler.update()
 
-        _, predicted = logits.max(1)
-        total += labels.size(0)
-        correct += predicted.eq(labels).sum().item()
+            _, predicted = logits.max(1)
+            total += labels.size(0)
+            correct += predicted.eq(labels).sum().item()
 
-        descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(batch_idx,
-                                                                                loss / (batch_idx + 1),
-                                                                                100. * correct / total, correct,
-                                                                                total)
-        iterator.set_description(descriptor)
-        batch_idx += 1
+            descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(batch_idx,
+                                                                                    loss / (batch_idx + 1),
+                                                                                    100. * correct / total, correct,
+                                                                                    total)
+            iterator.set_description(descriptor)
+            batch_idx += 1
+        scheduler.step()
+        test(epoch, test_dl, model, rank)
 
     peak_memory_allocated += torch.cuda.max_memory_allocated()
     torch.cuda.reset_peak_memory_stats()
     print("Peak memory allocated: {:.2f} GB".format(peak_memory_allocated / 1024 ** 3))
 
 
-def test(epoch, dataloader, model):
+def test(epoch, dataloader, model, rank=0):
     global best_acc
     model.eval()
     iterator = tqdm(dataloader)
@@ -204,6 +240,10 @@ def test(epoch, dataloader, model):
             labels = labels.to(device) - 1
             tokens = tokens.to(device)
             masks = masks.to(device)
+            if args.distributed:
+                labels = labels.to(rank)
+                tokens = tokens.to(rank)
+                masks = masks.to(rank)
             logits = model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
             _, predicted = logits.max(1)
             total += labels.size(0)
@@ -215,18 +255,21 @@ def test(epoch, dataloader, model):
             batch_idx += 1
 
     # Save checkpoint.
-    acc = 100. * correct / total
-    if acc > best_acc:
-        print('Saving..')
-        state = {
-            'net': model.state_dict(),
-            'acc': acc,
-            'epoch': epoch,
-        }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        torch.save(state, './checkpoint/ckpt.pth')
-        best_acc = acc
+    if rank == 0:
+        acc = 100. * correct / total
+        if acc > best_acc:
+            print('Saving..')
+            state = {
+                'net': model.state_dict(),
+                'acc': acc,
+                'epoch': epoch,
+            }
+            if not os.path.isdir('checkpoint'):
+                os.mkdir('checkpoint')
+            torch.save(state, './checkpoint/ckpt.pth')
+            best_acc = acc
+        if args.distributed:
+            dist.barrier()
 
 
 def parse():
@@ -244,20 +287,22 @@ def parse():
 
 args = parse()
 num_class = 4
-train_dl, test_dl, vocab = load_dataloader(args.batch_size, args.workers)
-model, criterion, optimizer, scheduler, best_acc, start_epoch = load_model(args, num_class, vocab)
+vocab = get_tokenizer_size()
+best_acc, start_epoch = load_best_performance(args, num_class)
+scaler = GradScaler()
 
 epochs_total = args.epoch
 alpha = args.alpha
 
 
 def main_ddp(rank, world_size):
+    global model
     setup(rank, world_size)
+    model, criterion = load_model(args, num_class, vocab)
+    model = model.to(rank)
     ddp_model = DDP(model, device_ids=[rank], output_device=rank)
-    for epoch in range(start_epoch, epochs_total):
-        train(train_dl, ddp_model, criterion, optimizer, alpha)
-        test(epoch, test_dl, ddp_model)
-        scheduler.step()
+    print("***********************************************************rank: ", rank)
+    train(ddp_model, criterion, alpha, rank)
     cleanup()
 
 
@@ -267,14 +312,12 @@ if __name__ == "__main__":
     # num_class = 4
     # train_dl, test_dl, vocab = load_dataloader(args.batch_size, args.workers)
     # model, criterion, optimizer, scheduler, best_acc, start_epoch = load_model(args, num_class, vocab)
-    scaler = GradScaler()
+    # scaler = GradScaler()
     torch.cuda.empty_cache()
 
     if not args.distributed:
-        for epoch in range(start_epoch, epochs_total):
-            train(train_dl, model, criterion, optimizer, alpha)
-            test(epoch, test_dl, model)
-            scheduler.step()
+        model, criterion = load_model(args, num_class, vocab)
+        train(model, criterion, alpha)
 
     else:
         # -----------------distributed training---------------------- #
