@@ -116,9 +116,10 @@ class Embeddings(nn.Module):
         self.pos_embedding = nn.Embedding(maxlen, d_model)
         self.d_model = d_model
         self.maxlen = maxlen
+        self.pos_embedding_idx = nn.Parameter(torch.arange(start=0, end=self.maxlen, device=device), requires_grad=False)
 
     def forward(self, x):
-        positions = self.pos_embedding(torch.arange(start=0, end=self.maxlen, device=device))[:x.size(1), :]
+        positions = self.pos_embedding(self.pos_embedding_idx)[:x.size(1), :]
         with autocast(device_type=device, enabled=False):
             tokens = self.token_embedding(x.long())
         return (positions + tokens) * math.sqrt(self.d_model)
