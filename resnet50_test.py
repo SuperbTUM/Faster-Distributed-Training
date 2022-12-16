@@ -16,6 +16,7 @@ import numpy as np
 import argparse
 from typing import Any, Callable, List, Optional, Tuple
 
+import ngd_optimizer
 from resnet import resnet50
 from prefetch_generator import BackgroundGenerator
 
@@ -27,6 +28,7 @@ except:
     from apex import amp
     use_torch_extension = False
 
+from ngd_optimizer import NGD
 from torchvision_utils import download_and_extract_archive, check_integrity
 
 
@@ -45,6 +47,7 @@ def parse():
     parser.add_argument("--bs", default=128, type=int)
     parser.add_argument("--workers", default=2, type=int)
     parser.add_argument("--meta_learning", action="store_true", help="adaptive lambda in mixup")
+    parser.add_argument("--ngd", action="store_true")
     args = parser.parse_args()
     return args
 
@@ -413,9 +416,15 @@ def get_model(args, classes):
         start_epoch = checkpoint['epoch']
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=args.lr,
-                          momentum=0.9, weight_decay=5e-4)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
+
+    if args.ngd:
+        optimizer = ngd_optimizer.NGD(net.parameters(), lr=args.lr,
+                                      momentum=0.9, weight_decay=5e-4)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 2, gamma=0.75)
+    else:
+        optimizer = optim.SGD(net.parameters(), lr=args.lr,
+                              momentum=0.9, weight_decay=5e-4)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
     return net, criterion, optimizer, scheduler, best_acc, start_epoch
 
 
