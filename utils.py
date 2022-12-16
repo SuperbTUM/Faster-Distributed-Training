@@ -1,4 +1,6 @@
 import os
+import numpy as np
+import matplotlib.pyplot as plt
 
 import torch
 import torch.distributed as dist
@@ -34,3 +36,21 @@ def distributed_wrapper(rank, func, world_size, *func_args):
 
 def distributed_warpper_runner(distributed_wrapper, world_size, *func_args):
     mp.spawn(distributed_wrapper, args=(world_size, *func_args, ), nprocs=world_size, join=True)
+
+
+def draw_graph(xs, ys, labels, title, metric):
+    plt.figure()
+    if isinstance(xs, list) or isinstance(xs, np.ndarray):
+        for x_list, y_list, label in zip(xs, ys, labels):
+            plt.plot(x_list, y_list, label=label, linewidth=2)
+    else:
+        plt.plot(xs, ys, label=labels, linewidth=2)
+
+    plt.xlabel("Epoch/Iteration")
+    plt.ylabel(metric)
+    plt.title(title)
+    plt.legend()
+    plt.grid()
+    plt.savefig(title + ".png")
+    plt.show()
+

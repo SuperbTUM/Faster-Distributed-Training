@@ -16,7 +16,6 @@ import numpy as np
 import argparse
 from typing import Any, Callable, List, Optional, Tuple
 
-import ngd_optimizer
 from resnet import resnet50
 from prefetch_generator import BackgroundGenerator
 
@@ -28,8 +27,13 @@ except:
     from apex import amp
     use_torch_extension = False
 
+from utils import *
 from ngd_optimizer import NGD
 from torchvision_utils import download_and_extract_archive, check_integrity
+
+
+training_acc = []
+testing_acc = []
 
 
 class DataLoaderX(torch.utils.data.DataLoader):
@@ -418,8 +422,8 @@ def get_model(args, classes):
     criterion = nn.CrossEntropyLoss()
 
     if args.ngd:
-        optimizer = ngd_optimizer.NGD(net.parameters(), lr=args.lr,
-                                      momentum=0.9, weight_decay=5e-4)
+        optimizer = NGD(net.parameters(), lr=args.lr,
+                        momentum=0.9, weight_decay=5e-4)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 2, gamma=0.75)
     else:
         optimizer = optim.SGD(net.parameters(), lr=args.lr,
@@ -507,6 +511,7 @@ def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning):
                                                                                     total)
             iterator.set_description(descriptor)
             batch_idx += 1
+    training_acc.append(100. * correct / total)
     peak_memory_allocated += torch.cuda.max_memory_allocated()
     torch.cuda.reset_peak_memory_stats()
     print("Peak memory allocated: {:.2f} GB".format(peak_memory_allocated/1024 ** 3))
@@ -539,6 +544,7 @@ def test(epoch, testloader, net):
 
     # Save checkpoint.
     acc = 100.*correct/total
+    testing_acc.append(acc)
     if acc > best_acc:
         print('Saving..')
         state = {
@@ -566,3 +572,5 @@ if __name__ == "__main__":
         train(epoch, trainloader, model, optimizer, criterion, args.alpha, args.meta_learning)
         test(epoch, testloader, model)
         scheduler.step()
+    draw_graph([np.arange(start=start_epoch, stop=start_epoch+args.epoch) for _ in range(2)],
+               [training_acc, testing_acc], ["training", "testing"], "Accuracy curve", "accuracy")
