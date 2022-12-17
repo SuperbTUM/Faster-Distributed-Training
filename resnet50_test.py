@@ -588,8 +588,8 @@ def test(epoch, testloader, criterion, net, rank=0):
                 os.mkdir('checkpoint')
             torch.save(state, './checkpoint/ckpt.pth')
             best_acc = acc
-        if args.distributed:
-            dist.barrier()
+        # if args.distributed:
+        #     dist.barrier()
 
 
 def load_best_performance(args, num_class):
@@ -619,8 +619,10 @@ if use_torch_extension:
     scaler = GradScaler()
 
 
-def main_ddp(rank, world_size):
-    setup(rank, world_size)
+# def main_ddp(rank, world_size):
+def main_ddp(world_size):
+    setup_norank(world_size)
+    rank = dist.get_rank()
     model, criterion = get_model(args, classes)
     model = model.to(rank)
     ddp_model = DDP(model, device_ids=[rank], output_device=rank)
@@ -634,7 +636,8 @@ if __name__ == "__main__":
     torch.cuda.empty_cache()
     if distributed:
         world_size = torch.cuda.device_count()
-        distributed_warpper_runner(main_ddp, world_size)
+        main_ddp(world_size)
+        # distributed_warpper_runner(main_ddp, world_size)
     else:
         model, criterion = get_model(args, classes)
         train(trainset, testloader, model, criterion, args.alpha, args.meta_learning)
