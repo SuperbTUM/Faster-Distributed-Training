@@ -193,9 +193,9 @@ def train(model, criterion, alpha, ngd, rank=0):
     for epoch in range(start_epoch, epochs_total):
         start = time.monotonic()
         for tokens, labels, masks in iterator:
-            labels = labels.to(device) - 1
-            tokens = tokens.to(device)
-            masks = masks.to(device)
+            labels = labels.to(device, non_blocking=True) - 1
+            tokens = tokens.to(device, non_blocking=True)
+            masks = masks.to(device, non_blocking=True)
             if args.distributed:
                 labels = labels.to(rank)
                 tokens = tokens.to(rank)

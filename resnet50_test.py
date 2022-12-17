@@ -35,7 +35,6 @@ from torchvision_utils import download_and_extract_archive, check_integrity
 
 training_acc = []
 testing_acc = []
-training_time_epoch = []
 
 
 class DataLoaderX(torch.utils.data.DataLoader):
@@ -53,6 +52,7 @@ def parse():
     parser.add_argument("--bs", default=128, type=int)
     parser.add_argument("--workers", default=2, type=int)
     parser.add_argument("--meta_learning", action="store_true", help="adaptive lambda in mixup")
+    parser.add_argument("--distributed", action="store_true")
     parser.add_argument("--ngd", action="store_true")
     args = parser.parse_args()
     return args
@@ -404,13 +404,10 @@ def get_model(args, classes):
     print('==> Building model..')
     net = resnet50(len(classes)).to(device)
     if device == 'cuda':
-        if use_torch_extension:
+        if use_torch_extension and not args.distributed:
             net = torch.nn.DataParallel(net)
         cudnn.enabled = True
         cudnn.benchmark = True
-
-    best_acc = 0  # best test accuracy
-    start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 
     if args.resume:
         # Load checkpoint.
@@ -418,11 +415,12 @@ def get_model(args, classes):
         assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
         checkpoint = torch.load('./checkpoint/ckpt.pth')
         net.load_state_dict(checkpoint['net'])
-        best_acc = checkpoint['acc']
-        start_epoch = checkpoint['epoch']
 
     criterion = nn.CrossEntropyLoss()
+    return net, criterion
 
+
+def get_optimizer(net):
     if args.ngd:
         optimizer = NGD(net.parameters(), lr=args.lr,
                         momentum=0.9, weight_decay=5e-4)
@@ -431,11 +429,10 @@ def get_model(args, classes):
         optimizer = optim.SGD(net.parameters(), lr=args.lr,
                               momentum=0.9, weight_decay=5e-4)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
-    return net, criterion, optimizer, scheduler, best_acc, start_epoch
-
+    return optimizer, scheduler
 
 # Training
-def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning):
+def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning, rank=0):
     print('\nEpoch: %d' % epoch)
     net.train()
     train_loss = 0
@@ -450,7 +447,9 @@ def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning):
     peak_memory_allocated = 0
     if use_torch_extension:
         for inputs, targets in iterator:
-            inputs, targets = inputs.to(device), targets.to(device)
+            inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
+            if distributed:
+                inputs, targets = inputs.to(rank), targets.to(rank)
             if meta_learning:
                 inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets)
             else:
@@ -485,7 +484,9 @@ def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning):
         net, optimizer = amp.initialize(net, optimizer, opt_level)
         net = nn.DataParallel(net)
         for inputs, targets in iterator:
-            inputs, targets = inputs.to(device), targets.to(device)
+            inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
+            if distributed:
+                inputs, targets = inputs.to(rank), targets.to(rank)
             if meta_learning:
                 inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets)
             else:
@@ -520,14 +521,14 @@ def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning):
     ################
     end = time.monotonic()
 
-    training_time_epoch.append(end - start)
+    training_time_epoch[epoch-start_epoch] += (end - start)
     training_acc.append(100. * correct / total)
     peak_memory_allocated += torch.cuda.max_memory_allocated()
     torch.cuda.reset_peak_memory_stats()
     print("Peak memory allocated: {:.2f} GB".format(peak_memory_allocated/1024 ** 3))
 
 
-def test(epoch, testloader, net):
+def test(epoch, testloader, net, rank=0):
     global best_acc
     net.eval()
     test_loss = 0
@@ -539,6 +540,8 @@ def test(epoch, testloader, net):
         iterator = tqdm(testloader)
         for inputs, targets in iterator:
             inputs, targets = inputs.to(device), targets.to(device)
+            if distributed:
+                inputs, targets = inputs.to(rank), targets.to(rank)
             outputs = net(inputs)
             loss = criterion(outputs, targets)
 
@@ -553,35 +556,74 @@ def test(epoch, testloader, net):
             batch_idx += 1
 
     # Save checkpoint.
-    acc = 100.*correct/total
-    testing_acc.append(acc)
-    if acc > best_acc:
-        print('Saving..')
-        state = {
-            'net': net.state_dict(),
-            'acc': acc,
-            'epoch': epoch,
-        }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        torch.save(state, './checkpoint/ckpt.pth')
-        best_acc = acc
+    if rank == 0:
+        acc = 100.*correct/total
+        testing_acc.append(acc)
+        if acc > best_acc:
+            print('Saving..')
+            state = {
+                'net': net.state_dict(),
+                'acc': acc,
+                'epoch': epoch,
+            }
+            if not os.path.isdir('checkpoint'):
+                os.mkdir('checkpoint')
+            torch.save(state, './checkpoint/ckpt.pth')
+            best_acc = acc
+
+
+def load_best_performance(args, num_class):
+    best_acc = 1. / num_class
+    start_epoch = 0
+    if args.resume:
+        # Load checkpoint.
+        print('==> Resuming from checkpoint..')
+        assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
+        checkpoint = torch.load('./checkpoint/ckpt.pth')
+        best_acc = max(best_acc, checkpoint['acc'])
+        start_epoch = checkpoint['epoch']
+    return best_acc, start_epoch
+
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+args = parse()
+distributed = args.distributed
+trainloader, testloader, classes = data_preparation(args.bs, args.workers)
+best_acc, start_epoch = load_best_performance(args, len(classes))
+
+training_time_epoch = np.zeros((args.epoch, ))
+
+if use_torch_extension:
+    scaler = GradScaler()
+
+
+def main_ddp(rank, world_size):
+    setup(rank, world_size)
+    model, criterion = get_model(args, classes)
+    model = model.to(rank)
+    ddp_model = DDP(model, device_ids=[rank], output_device=rank)
+    optimizer, scheduler = get_optimizer(ddp_model)
+    for epoch in range(start_epoch, start_epoch+args.epoch):
+        train(epoch, trainloader, ddp_model, optimizer, criterion, args.alpha, args.meta_learning, rank)
+        test(epoch, testloader, ddp_model, rank)
+        scheduler.step()
+    cleanup()
 
 
 if __name__ == "__main__":
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     assert device == "cuda"
-    args = parse()
     torch.manual_seed(123456)
-    trainloader, testloader, classes = data_preparation(args.bs, args.workers)
-    model, criterion, optimizer, scheduler, best_acc, start_epoch = get_model(args, classes)
-    if use_torch_extension:
-        scaler = GradScaler()
     torch.cuda.empty_cache()
-    for epoch in range(start_epoch, start_epoch+args.epoch):
-        train(epoch, trainloader, model, optimizer, criterion, args.alpha, args.meta_learning)
-        test(epoch, testloader, model)
-        scheduler.step()
+    if distributed:
+        world_size = torch.cuda.device_count()
+        distributed_warpper_runner(main_ddp, world_size)
+    else:
+        model, criterion = get_model(args, classes)
+        optimizer, scheduler = get_optimizer(model)
+        for epoch in range(start_epoch, start_epoch+args.epoch):
+            train(epoch, trainloader, model, optimizer, criterion, args.alpha, args.meta_learning)
+            test(epoch, testloader, model)
+            scheduler.step()
     draw_graph([np.arange(start=start_epoch, stop=start_epoch+args.epoch) for _ in range(2)],
                [training_acc, testing_acc], ["training", "testing"], "Resnet accuracy curve", "accuracy")
     draw_graph(np.arange(start=start_epoch, stop=start_epoch+args.epoch), training_time_epoch, "training time",
