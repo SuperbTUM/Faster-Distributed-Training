@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
 import torch.backends.cudnn as cudnn
+from torch.utils.data.distributed import DistributedSampler
 
 import torchvision
 import torchvision.transforms as transforms
@@ -331,8 +332,13 @@ def data_preparation(trainset, batch_size, workers):
     # ])
     # trainset = torchvision.datasets.CIFAR10(
     #     root='./data', train=True, download=True, transform=transform_train)
-    trainloader = DataLoaderX(
-        trainset, batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True, persistent_workers=True)
+    if distributed:
+        train_sampler = DistributedSampler(dataset=trainset)
+        trainloader = DataLoaderX(trainset, batch_size=batch_size,
+                                  sampler=train_sampler, num_workers=workers, pin_memory=True, persistent_workers=True)
+    else:
+        trainloader = DataLoaderX(
+            trainset, batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True, persistent_workers=True)
     return trainloader
 
 
@@ -440,10 +446,10 @@ def get_optimizer(net):
 
 
 # Training
-def train(trainset, testset, net, criterion, alpha, meta_learning, rank=0):
+def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
     optimizer, scheduler = get_optimizer(net)
     trainloader = data_preparation(trainset, args.bs, args.workers)
-    testloader = data_preparation_test(testset, args.bs, args.workers)
+    # testloader = data_preparation_test(testset, args.bs, args.workers)
     for epoch in range(start_epoch, start_epoch + args.epoch):
         net.train()
         train_loss = 0
@@ -495,7 +501,7 @@ def train(trainset, testset, net, criterion, alpha, meta_learning, rank=0):
             for inputs, targets in iterator:
                 inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
                 if distributed:
-                    inputs, targets = inputs.to(rank, non_blocking=True), targets.to(rank, non_blocking=True)
+                    inputs, targets = inputs.to(rank), targets.to(rank)
                 if meta_learning:
                     inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets)
                 else:
@@ -605,6 +611,7 @@ distributed = args.distributed
 classes = get_classes()
 best_acc, start_epoch = load_best_performance(args, len(classes))
 trainset, testset = get_dataset()
+testloader = data_preparation_test(testset, args.bs, args.workers)
 
 training_time_epoch = np.zeros((args.epoch, ))
 
@@ -617,7 +624,7 @@ def main_ddp(rank, world_size):
     model, criterion = get_model(args, classes)
     model = model.to(rank)
     ddp_model = DDP(model, device_ids=[rank], output_device=rank)
-    train(trainset, testset, ddp_model, criterion, args.alpha, args.meta_learning, rank)
+    train(trainset, testloader, ddp_model, criterion, args.alpha, args.meta_learning, rank)
     cleanup()
 
 
@@ -630,7 +637,7 @@ if __name__ == "__main__":
         distributed_warpper_runner(main_ddp, world_size)
     else:
         model, criterion = get_model(args, classes)
-        train(trainset, testset, model, criterion, args.alpha, args.meta_learning)
+        train(trainset, testloader, model, criterion, args.alpha, args.meta_learning)
     draw_graph([np.arange(start=start_epoch, stop=start_epoch+args.epoch) for _ in range(2)],
                [training_acc, testing_acc], ["training", "testing"], "Resnet accuracy curve", "accuracy")
     draw_graph(np.arange(start=start_epoch, stop=start_epoch+args.epoch), training_time_epoch, "training time",
