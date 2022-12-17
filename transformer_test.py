@@ -315,9 +315,12 @@ ngd = args.ngd
 training_time_epoch = np.zeros((epochs_total - start_epoch,))
 
 
-def main_ddp(rank, world_size):
+# def main_ddp(rank, world_size):
+def main_ddp(world_size):
     global model
-    setup(rank, world_size)
+    # setup(rank, world_size)
+    setup_norank(world_size)
+    rank = dist.get_rank()
     model, criterion = load_model(args, num_class, vocab)
     model = model.to(rank)
     ddp_model = DDP(model, device_ids=[rank], output_device=rank)
@@ -343,7 +346,8 @@ if __name__ == "__main__":
         # -----------------distributed training---------------------- #
 
         world_size = torch.cuda.device_count()
-        distributed_warpper_runner(main_ddp, world_size)
+        main_ddp(world_size)
+        # distributed_warpper_runner(main_ddp, world_size)
 
     draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
                [training_accuracy, testing_accuracy], ["training", "testing"], "Transformer accuracy curve", "accuracy")
