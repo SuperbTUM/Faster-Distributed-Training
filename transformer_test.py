@@ -236,10 +236,11 @@ def train(model, criterion, alpha, ngd, rank=0):
         scheduler.step()
         test(epoch, test_dl, model, rank)
 
-    training_accuracy.append((epoch, rank, 100. * correct / total))
-    peak_memory_allocated += torch.cuda.max_memory_allocated()
-    torch.cuda.reset_peak_memory_stats()
-    print("Peak memory allocated: {:.2f} GB".format(peak_memory_allocated / 1024 ** 3))
+    if rank == 0:
+        training_accuracy.append(100. * correct / total)
+        peak_memory_allocated += torch.cuda.max_memory_allocated()
+        torch.cuda.reset_peak_memory_stats()
+        print("Peak memory allocated: {:.2f} GB".format(peak_memory_allocated / 1024 ** 3))
 
 
 def test(epoch, dataloader, model, rank=0):
