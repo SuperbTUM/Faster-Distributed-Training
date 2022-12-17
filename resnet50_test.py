@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 import os
 import pickle
+import time
 from PIL import Image
 import numpy as np
 import argparse
@@ -34,6 +35,7 @@ from torchvision_utils import download_and_extract_archive, check_integrity
 
 training_acc = []
 testing_acc = []
+training_time_epoch = []
 
 
 class DataLoaderX(torch.utils.data.DataLoader):
@@ -262,10 +264,10 @@ class CIFAR10(VisionDataset):
 
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
-        img = Image.fromarray(img)
-
+        # img = Image.fromarray(img)
+        #
         # Transform to tensor
-        img = transforms.ToTensor()(img)
+        img = torch.from_numpy(img / 255.).permute(2, 0, 1).float()
 
         if self.transform is not None:
             img = self.transform(img)
@@ -440,6 +442,10 @@ def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning):
     correct = 0
     total = 0
     batch_idx = 0
+
+    ############################
+    start = time.monotonic()
+
     iterator = tqdm(trainloader)
     peak_memory_allocated = 0
     if use_torch_extension:
@@ -511,6 +517,10 @@ def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning):
                                                                                     total)
             iterator.set_description(descriptor)
             batch_idx += 1
+    ################
+    end = time.monotonic()
+
+    training_time_epoch.append(end - start)
     training_acc.append(100. * correct / total)
     peak_memory_allocated += torch.cuda.max_memory_allocated()
     torch.cuda.reset_peak_memory_stats()
@@ -573,4 +583,6 @@ if __name__ == "__main__":
         test(epoch, testloader, model)
         scheduler.step()
     draw_graph([np.arange(start=start_epoch, stop=start_epoch+args.epoch) for _ in range(2)],
-               [training_acc, testing_acc], ["training", "testing"], "Accuracy curve", "accuracy")
+               [training_acc, testing_acc], ["training", "testing"], "Resnet accuracy curve", "accuracy")
+    draw_graph(np.arange(start=start_epoch, stop=start_epoch+args.epoch), training_time_epoch, "training time",
+               "Resnet time for training", "time(sec.)")

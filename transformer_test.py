@@ -14,6 +14,7 @@ from transformer import Transformer
 
 import os
 import dill as pickle
+import time
 import argparse
 from tqdm import tqdm
 from prefetch_generator import BackgroundGenerator
@@ -23,6 +24,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from utils import *
+from ngd_optimizer import NGD
 from torch.utils.data.distributed import DistributedSampler
 
 # from torch_ort import ORTModule
@@ -30,6 +32,9 @@ from torch.utils.data.distributed import DistributedSampler
 from torch_ort import ORTModule
 model = ORTModule(model)
 """
+
+training_accuracy = []
+testing_accuracy = []
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 # used to create key-data pair for map-style dataset
@@ -168,7 +173,7 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
 
-def train(model, criterion, alpha, rank=0):
+def train(model, criterion, alpha, ngd, rank=0):
     ##
     train_dl, test_dl = load_dataloader(args.batch_size, args.workers)
 
@@ -179,9 +184,14 @@ def train(model, criterion, alpha, rank=0):
     iterator = tqdm(train_dl)
     peak_memory_allocated = 0
     ##
-    optimizer = SGD(model.parameters(), lr=args.lr)
+    if ngd:
+        optimizer = NGD(model.parameters(), lr=args.lr)
+    else:
+        optimizer = SGD(model.parameters(), lr=args.lr)
     scheduler = MultiStepLR(optimizer, milestones=[10, 15], gamma=0.1)
+
     for epoch in range(start_epoch, epochs_total):
+        start = time.monotonic()
         for tokens, labels, masks in iterator:
             labels = labels.to(device) - 1
             tokens = tokens.to(device)
@@ -220,9 +230,13 @@ def train(model, criterion, alpha, rank=0):
                                                                                     total)
             iterator.set_description(descriptor)
             batch_idx += 1
+        end = time.monotonic()
+        ################
+        training_time_epoch[epoch - start_epoch] += end - start
         scheduler.step()
         test(epoch, test_dl, model, rank)
 
+    training_accuracy.append((epoch, rank, 100. * correct / total))
     peak_memory_allocated += torch.cuda.max_memory_allocated()
     torch.cuda.reset_peak_memory_stats()
     print("Peak memory allocated: {:.2f} GB".format(peak_memory_allocated / 1024 ** 3))
@@ -257,6 +271,7 @@ def test(epoch, dataloader, model, rank=0):
     # Save checkpoint.
     if rank == 0:
         acc = 100. * correct / total
+        testing_accuracy.append(acc)
         if acc > best_acc:
             print('Saving..')
             state = {
@@ -281,6 +296,7 @@ def parse():
     parser.add_argument("--workers", help="number of workers", default=2, type=int)
     parser.add_argument("--alpha", help="alpha for beta distribution", default=0.99, type=float)
     parser.add_argument("--distributed", help="whether to turn on distributed training", action="store_true")
+    parser.add_argument("--ngd", action="store_true")
     args = parser.parse_args()
     return args
 
@@ -293,6 +309,9 @@ scaler = GradScaler()
 
 epochs_total = args.epoch
 alpha = args.alpha
+ngd = args.ngd
+
+training_time_epoch = np.zeros((epochs_total - start_epoch,))
 
 
 def main_ddp(rank, world_size):
@@ -302,7 +321,7 @@ def main_ddp(rank, world_size):
     model = model.to(rank)
     ddp_model = DDP(model, device_ids=[rank], output_device=rank)
     print("***********************************************************rank: ", rank)
-    train(ddp_model, criterion, alpha, rank)
+    train(ddp_model, criterion, alpha, ngd, rank)
     cleanup()
 
 
@@ -317,10 +336,15 @@ if __name__ == "__main__":
 
     if not args.distributed:
         model, criterion = load_model(args, num_class, vocab)
-        train(model, criterion, alpha)
+        train(model, criterion, alpha, ngd)
 
     else:
         # -----------------distributed training---------------------- #
 
         world_size = torch.cuda.device_count()
         distributed_warpper_runner(main_ddp, world_size)
+
+    draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
+               [training_accuracy, testing_accuracy], ["training", "testing"], "Transformer accuracy curve", "accuracy")
+    draw_graph(np.arange(start=start_epoch, stop=start_epoch + args.epoch), training_time_epoch, "training time",
+               "Transformer time for training", "time(sec.)")
