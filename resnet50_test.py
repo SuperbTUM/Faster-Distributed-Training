@@ -298,47 +298,54 @@ class CIFAR10(VisionDataset):
         return f"Split: {split}"
 
 
-def data_preparation(batch_size, workers):
+def get_classes():
+    classes = ('plane', 'car', 'bird', 'cat', 'deer',
+               'dog', 'frog', 'horse', 'ship', 'truck')
+    return classes
+
+
+def get_dataset():
     # Data
     print('==> Preparing data..')
-    # transform_train = transforms.Compose([
-    #     transforms.RandomCrop(32, padding=4),
-    #     transforms.RandomHorizontalFlip(),
-    #     transforms.ToTensor(),
-    #     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    # ])
-
     transform_train = nn.Sequential(
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
         # transforms.ToTensor(),
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     )
-
-    # transform_test = transforms.Compose([
-    #     transforms.ToTensor(),
-    #     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    # ])
-
+    trainset = CIFAR10(root='./data', train=True, download=True, transform=transform_train)
     transform_test = nn.Sequential(
         # transforms.ToTensor(),
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     )
+    testset = CIFAR10(root='./data', train=False, download=True, transform=transform_test)
+    return trainset, testset
 
+
+def data_preparation(trainset, batch_size, workers):
+    # transform_train = transforms.Compose([
+    #     transforms.RandomCrop(32, padding=4),
+    #     transforms.RandomHorizontalFlip(),
+    #     transforms.ToTensor(),
+    #     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    # ])
     # trainset = torchvision.datasets.CIFAR10(
     #     root='./data', train=True, download=True, transform=transform_train)
-    trainset = CIFAR10(root='./data', train=True, download=True, transform=transform_train)
     trainloader = DataLoaderX(
         trainset, batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True, persistent_workers=True)
+    return trainloader
 
+
+def data_preparation_test(testset, batch_size, workers):
+    # transform_test = transforms.Compose([
+    #     transforms.ToTensor(),
+    #     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    # ])
     # testset = torchvision.datasets.CIFAR10(
     #     root='./data', train=False, download=True, transform=transform_test)
-    testset = CIFAR10(root='./data', train=False, download=True, transform=transform_test)
     testloader = DataLoaderX(
         testset, batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True, persistent_workers=True)
-    classes = ('plane', 'car', 'bird', 'cat', 'deer',
-               'dog', 'frog', 'horse', 'ship', 'truck')
-    return trainloader, testloader, classes
+    return testloader
 
 
 def mixup_data(x, y, alpha=.99):
@@ -431,35 +438,73 @@ def get_optimizer(net):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
     return optimizer, scheduler
 
+
 # Training
-def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning, rank=0):
-    print('\nEpoch: %d' % epoch)
-    net.train()
-    train_loss = 0
-    correct = 0
-    total = 0
-    batch_idx = 0
+def train(trainset, testset, net, criterion, alpha, meta_learning, rank=0):
+    optimizer, scheduler = get_optimizer(net)
+    trainloader = data_preparation(trainset, args.bs, args.workers)
+    testloader = data_preparation_test(testset, args.bs, args.workers)
+    for epoch in range(start_epoch, start_epoch + args.epoch):
+        net.train()
+        train_loss = 0
+        correct = 0
+        total = 0
+        batch_idx = 0
+        peak_memory_allocated = 0
+        iterator = tqdm(trainloader)
+        ############################
+        start = time.monotonic()
+        if use_torch_extension:
+            for inputs, targets in iterator:
+                inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
+                if distributed:
+                    inputs, targets = inputs.to(rank, non_blocking=True), targets.to(rank, non_blocking=True)
+                if meta_learning:
+                    inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets)
+                else:
+                    inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, alpha)
+                inputs, targets_a, targets_b = map(Variable, (inputs,
+                                                              targets_a, targets_b))
 
-    ############################
-    start = time.monotonic()
+                optimizer.zero_grad(set_to_none=True)
 
-    iterator = tqdm(trainloader)
-    peak_memory_allocated = 0
-    if use_torch_extension:
-        for inputs, targets in iterator:
-            inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
-            if distributed:
-                inputs, targets = inputs.to(rank), targets.to(rank)
-            if meta_learning:
-                inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets)
-            else:
-                inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, alpha)
-            inputs, targets_a, targets_b = map(Variable, (inputs,
-                                                          targets_a, targets_b))
+                with autocast(device_type=device, dtype=torch.float16):
+                    outputs = net(inputs)
+                    # loss = criterion(outputs, targets)
+                    if meta_learning:
+                        loss = mixup_criterion_meta(criterion, outputs, targets_a, targets_b, lam)
+                    else:
+                        loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
 
-            optimizer.zero_grad(set_to_none=True)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
 
-            with autocast(device_type=device, dtype=torch.float16):
+                train_loss += loss.item()
+                _, predicted = outputs.max(1)
+                total += targets.size(0)
+                correct += predicted.eq(targets).sum().item()
+
+                descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(batch_idx, train_loss/(batch_idx+1), 100.*correct/total, correct, total)
+                iterator.set_description(descriptor)
+                batch_idx += 1
+        else:
+            opt_level = "O1"
+            net, optimizer = amp.initialize(net, optimizer, opt_level)
+            net = nn.DataParallel(net)
+            for inputs, targets in iterator:
+                inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
+                if distributed:
+                    inputs, targets = inputs.to(rank, non_blocking=True), targets.to(rank, non_blocking=True)
+                if meta_learning:
+                    inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets)
+                else:
+                    inputs, targets_a, targets_b, lam = mixup_data(inputs, targets,
+                                                                   alpha)
+                inputs, targets_a, targets_b = map(Variable, (inputs,
+                                                              targets_a, targets_b))
+                optimizer.zero_grad(set_to_none=True)
+
                 outputs = net(inputs)
                 # loss = criterion(outputs, targets)
                 if meta_learning:
@@ -467,68 +512,35 @@ def train(epoch, trainloader, net, optimizer, criterion, alpha, meta_learning, r
                 else:
                     loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
 
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                    scaled_loss.backward()
+                optimizer.step()
 
-            train_loss += loss.item()
-            _, predicted = outputs.max(1)
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
+                train_loss += loss.item()
+                _, predicted = outputs.max(1)
+                total += targets.size(0)
+                correct += predicted.eq(targets).sum().item()
 
-            descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(batch_idx, train_loss/(batch_idx+1), 100.*correct/total, correct, total)
-            iterator.set_description(descriptor)
-            batch_idx += 1
-    else:
-        opt_level = "O1"
-        net, optimizer = amp.initialize(net, optimizer, opt_level)
-        net = nn.DataParallel(net)
-        for inputs, targets in iterator:
-            inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
-            if distributed:
-                inputs, targets = inputs.to(rank), targets.to(rank)
-            if meta_learning:
-                inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets)
-            else:
-                inputs, targets_a, targets_b, lam = mixup_data(inputs, targets,
-                                                               alpha)
-            inputs, targets_a, targets_b = map(Variable, (inputs,
-                                                          targets_a, targets_b))
-            optimizer.zero_grad(set_to_none=True)
+                descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(batch_idx,
+                                                                                        train_loss / (batch_idx + 1),
+                                                                                        100. * correct / total, correct,
+                                                                                        total)
+                iterator.set_description(descriptor)
+                batch_idx += 1
+        ################
+        end = time.monotonic()
 
-            outputs = net(inputs)
-            # loss = criterion(outputs, targets)
-            if meta_learning:
-                loss = mixup_criterion_meta(criterion, outputs, targets_a, targets_b, lam)
-            else:
-                loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
+        training_time_epoch[epoch-start_epoch] += (end - start)
+        training_acc.append(100. * correct / total)
+        peak_memory_allocated += torch.cuda.max_memory_allocated()
+        torch.cuda.reset_peak_memory_stats()
+        print("Peak memory allocated: {:.2f} GB".format(peak_memory_allocated/1024 ** 3))
 
-            with amp.scale_loss(loss, optimizer) as scaled_loss:
-                scaled_loss.backward()
-            optimizer.step()
-
-            train_loss += loss.item()
-            _, predicted = outputs.max(1)
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
-
-            descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(batch_idx,
-                                                                                    train_loss / (batch_idx + 1),
-                                                                                    100. * correct / total, correct,
-                                                                                    total)
-            iterator.set_description(descriptor)
-            batch_idx += 1
-    ################
-    end = time.monotonic()
-
-    training_time_epoch[epoch-start_epoch] += (end - start)
-    training_acc.append(100. * correct / total)
-    peak_memory_allocated += torch.cuda.max_memory_allocated()
-    torch.cuda.reset_peak_memory_stats()
-    print("Peak memory allocated: {:.2f} GB".format(peak_memory_allocated/1024 ** 3))
+        test(epoch, testloader, criterion, net, rank)
+        scheduler.step()
 
 
-def test(epoch, testloader, net, rank=0):
+def test(epoch, testloader, criterion, net, rank=0):
     global best_acc
     net.eval()
     test_loss = 0
@@ -570,6 +582,8 @@ def test(epoch, testloader, net, rank=0):
                 os.mkdir('checkpoint')
             torch.save(state, './checkpoint/ckpt.pth')
             best_acc = acc
+        if args.distributed:
+            dist.barrier()
 
 
 def load_best_performance(args, num_class):
@@ -588,8 +602,9 @@ def load_best_performance(args, num_class):
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 args = parse()
 distributed = args.distributed
-trainloader, testloader, classes = data_preparation(args.bs, args.workers)
+classes = get_classes()
 best_acc, start_epoch = load_best_performance(args, len(classes))
+trainset, testset = get_dataset()
 
 training_time_epoch = np.zeros((args.epoch, ))
 
@@ -602,11 +617,7 @@ def main_ddp(rank, world_size):
     model, criterion = get_model(args, classes)
     model = model.to(rank)
     ddp_model = DDP(model, device_ids=[rank], output_device=rank)
-    optimizer, scheduler = get_optimizer(ddp_model)
-    for epoch in range(start_epoch, start_epoch+args.epoch):
-        train(epoch, trainloader, ddp_model, optimizer, criterion, args.alpha, args.meta_learning, rank)
-        test(epoch, testloader, ddp_model, rank)
-        scheduler.step()
+    train(trainset, testset, ddp_model, criterion, args.alpha, args.meta_learning, rank)
     cleanup()
 
 
@@ -619,11 +630,7 @@ if __name__ == "__main__":
         distributed_warpper_runner(main_ddp, world_size)
     else:
         model, criterion = get_model(args, classes)
-        optimizer, scheduler = get_optimizer(model)
-        for epoch in range(start_epoch, start_epoch+args.epoch):
-            train(epoch, trainloader, model, optimizer, criterion, args.alpha, args.meta_learning)
-            test(epoch, testloader, model)
-            scheduler.step()
+        train(trainset, testset, model, criterion, args.alpha, args.meta_learning)
     draw_graph([np.arange(start=start_epoch, stop=start_epoch+args.epoch) for _ in range(2)],
                [training_acc, testing_acc], ["training", "testing"], "Resnet accuracy curve", "accuracy")
     draw_graph(np.arange(start=start_epoch, stop=start_epoch+args.epoch), training_time_epoch, "training time",
