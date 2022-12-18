@@ -360,10 +360,10 @@ def mixup_data(x, y, alpha=.99):
     return mixed_x, y_a, y_b, lam
 
 
-def mixup_data_meta(x, y):
+def mixup_data_meta(x, y, rank):
     batch_size = x.size(0)
-    lam = torch.sigmoid(nn.Parameter(torch.rand(batch_size, 1, 1, 1, device=device)))
-    index = torch.randperm(batch_size, device=device)
+    lam = torch.sigmoid(nn.Parameter(torch.rand(batch_size, 1, 1, 1, device=device)).to(rank))
+    index = torch.randperm(batch_size, device=device).to(rank)
     mixed_x = lam * x + (1 - lam) * x[index, :]
     y_a, y_b = y, y[index]
     return mixed_x, y_a, y_b, lam
@@ -457,7 +457,7 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
                 if distributed:
                     inputs, targets = inputs.to(rank, non_blocking=True), targets.to(rank, non_blocking=True)
                 if meta_learning:
-                    inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets)
+                    inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets, rank)
                 else:
                     inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, alpha)
                 inputs, targets_a, targets_b = map(Variable, (inputs,
@@ -494,7 +494,7 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
                 if distributed:
                     inputs, targets = inputs.to(rank), targets.to(rank)
                 if meta_learning:
-                    inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets)
+                    inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets, rank)
                 else:
                     inputs, targets_a, targets_b, lam = mixup_data(inputs, targets,
                                                                    alpha)
@@ -554,7 +554,10 @@ def test(epoch, testloader, criterion, net, rank=0):
             outputs = net(inputs)
             loss = criterion(outputs, targets)
 
-            test_loss += loss.item()
+            try:
+                test_loss += loss.item()
+            except ValueError:
+                test_loss += loss.mean().item()
             _, predicted = outputs.max(1)
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
