@@ -282,10 +282,10 @@ def test(epoch, dataloader, model, rank=0):
             }
             if not os.path.isdir('checkpoint'):
                 os.mkdir('checkpoint')
-            torch.save(state, './checkpoint/ckpt.pth')
+            torch.save(state, './checkpoint/transformer_ckpt.pth')
             best_acc = acc
-        if args.distributed:
-            dist.barrier()
+        # if args.distributed:
+        #     dist.barrier()
 
 
 def parse():
