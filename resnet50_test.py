@@ -33,8 +33,6 @@ from utils import *
 from ngd_optimizer import NGD
 from torchvision_utils import download_and_extract_archive, check_integrity
 
-
-training_acc = []
 testing_acc = []
 
 
@@ -88,7 +86,6 @@ class VisionDataset(torch.utils.data.Dataset):
     """
     Base Class For making datasets which are compatible with torchvision.
     It is necessary to override the ``__getitem__`` and ``__len__`` method.
-
     Args:
         root (string): Root directory of dataset.
         transforms (callable, optional): A function/transforms that takes in
@@ -97,9 +94,7 @@ class VisionDataset(torch.utils.data.Dataset):
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.
-
     .. note::
-
         :attr:`transforms` and the combination of :attr:`transform` and :attr:`target_transform` are mutually exclusive.
     """
 
@@ -134,7 +129,6 @@ class VisionDataset(torch.utils.data.Dataset):
         """
         Args:
             index (int): Index
-
         Returns:
             (Any): Sample and meta data, optionally transformed by the respective transforms.
         """
@@ -164,7 +158,6 @@ class VisionDataset(torch.utils.data.Dataset):
 
 class CIFAR10(VisionDataset):
     """`CIFAR10 <https://www.cs.toronto.edu/~kriz/cifar.html>`_ Dataset.
-
     Args:
         root (string): Root directory of dataset where directory
             ``cifar-10-batches-py`` exists or will be saved to if download is set to True.
@@ -177,7 +170,6 @@ class CIFAR10(VisionDataset):
         download (bool, optional): If true, downloads the dataset from the internet and
             puts it in root directory. If dataset is already downloaded, it is not
             downloaded again.
-
     """
 
     base_folder = "cifar-10-batches-py"
@@ -257,7 +249,6 @@ class CIFAR10(VisionDataset):
         """
         Args:
             index (int): Index
-
         Returns:
             tuple: (image, target) where target is index of the target class.
         """
@@ -537,7 +528,7 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
         end = time.monotonic()
 
         training_time_epoch[epoch-start_epoch] += (end - start)
-        training_acc.append(100. * correct / total)
+        training_acc[epoch-start_epoch] += (100. * correct / total)
         peak_memory_allocated += torch.cuda.max_memory_allocated()
         torch.cuda.reset_peak_memory_stats()
         print("Peak memory allocated: {:.2f} GB".format(peak_memory_allocated/1024 ** 3))
@@ -573,10 +564,10 @@ def test(epoch, testloader, criterion, net, rank=0):
             iterator.set_description(descriptor)
             batch_idx += 1
 
+    acc = 100.*correct/total
+    testing_acc.append(acc)
     # Save checkpoint.
     if rank == 0:
-        acc = 100.*correct/total
-        testing_acc.append(acc)
         if acc > best_acc:
             print('Saving..')
             state = {
@@ -613,6 +604,8 @@ best_acc, start_epoch = load_best_performance(args, len(classes))
 trainset, testset = get_dataset()
 testloader = data_preparation_test(testset, args.bs, args.workers)
 
+
+training_acc = np.zeros((args.epoch, ))
 training_time_epoch = np.zeros((args.epoch, ))
 
 if use_torch_extension:
@@ -621,12 +614,18 @@ if use_torch_extension:
 
 # def main_ddp(rank, world_size):
 def main_ddp(world_size):
+    global testing_acc
     setup_norank(world_size)
     rank = dist.get_rank()
     model, criterion = get_model(args, classes)
     model = model.to(rank)
     ddp_model = DDP(model, device_ids=[rank], output_device=rank)
     train(trainset, testloader, ddp_model, criterion, args.alpha, args.meta_learning, rank)
+    testing_acc = np.asarray(testing_acc)
+    draw_graph([np.arange(start=start_epoch, stop=start_epoch+args.epoch) for _ in range(2)],
+        [training_acc, testing_acc], ["training", "testing"], "Resnet accuracy curve", "accuracy")
+    draw_graph(np.arange(start=start_epoch, stop=start_epoch+args.epoch), training_time_epoch, "training time",
+            "Resnet time for training", "time(sec.)")
     cleanup()
 
 
@@ -641,7 +640,7 @@ if __name__ == "__main__":
     else:
         model, criterion = get_model(args, classes)
         train(trainset, testloader, model, criterion, args.alpha, args.meta_learning)
-    draw_graph([np.arange(start=start_epoch, stop=start_epoch+args.epoch) for _ in range(2)],
-               [training_acc, testing_acc], ["training", "testing"], "Resnet accuracy curve", "accuracy")
-    draw_graph(np.arange(start=start_epoch, stop=start_epoch+args.epoch), training_time_epoch, "training time",
-               "Resnet time for training", "time(sec.)")
+        draw_graph([np.arange(start=start_epoch, stop=start_epoch+args.epoch) for _ in range(2)],
+                [training_acc, testing_acc], ["training", "testing"], "Resnet accuracy curve", "accuracy")
+        draw_graph(np.arange(start=start_epoch, stop=start_epoch+args.epoch), training_time_epoch, "training time",
+                "Resnet time for training", "time(sec.)")

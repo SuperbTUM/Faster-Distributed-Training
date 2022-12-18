@@ -49,8 +49,10 @@ def draw_graph(xs, ys, labels, title, metric):
     if isinstance(xs[0], list) or isinstance(xs[0], np.ndarray):
         for x_list, y_list, label in zip(xs, ys, labels):
             plt.plot(x_list, y_list, label=label, linewidth=2)
+        plt.xticks(xs[0])
     else:
         plt.plot(xs, ys, label=labels, linewidth=2)
+        plt.xticks(xs)
 
     plt.xlabel("Epoch/Iteration")
     plt.ylabel(metric)
@@ -58,5 +60,5 @@ def draw_graph(xs, ys, labels, title, metric):
     plt.legend()
     plt.grid()
     plt.savefig(title + ".png")
-    plt.show()
+
 

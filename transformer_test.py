@@ -269,10 +269,10 @@ def test(epoch, dataloader, model, rank=0):
             iterator.set_description(descriptor)
             batch_idx += 1
 
+    acc = 100. * correct / total
+    testing_accuracy.append(acc)
     # Save checkpoint.
     if rank == 0:
-        acc = 100. * correct / total
-        testing_accuracy.append(acc)
         if acc > best_acc:
             print('Saving..')
             state = {
@@ -326,6 +326,10 @@ def main_ddp(world_size):
     ddp_model = DDP(model, device_ids=[rank], output_device=rank)
     print("***********************************************************rank: ", rank)
     train(ddp_model, criterion, alpha, ngd, rank)
+    draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
+               [training_accuracy, testing_accuracy], ["training", "testing"], "Transformer accuracy curve", "accuracy")
+    draw_graph(np.arange(start=start_epoch, stop=start_epoch + args.epoch), training_time_epoch, "training time",
+               "Transformer time for training", "time(sec.)")
     cleanup()
 
 
@@ -341,15 +345,14 @@ if __name__ == "__main__":
     if not args.distributed:
         model, criterion = load_model(args, num_class, vocab)
         train(model, criterion, alpha, ngd)
-
+        draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
+                   [training_accuracy, testing_accuracy], ["training", "testing"], "Transformer accuracy curve",
+                   "accuracy")
+        draw_graph(np.arange(start=start_epoch, stop=start_epoch + args.epoch), training_time_epoch, "training time",
+                   "Transformer time for training", "time(sec.)")
     else:
         # -----------------distributed training---------------------- #
 
         world_size = torch.cuda.device_count()
         main_ddp(world_size)
         # distributed_warpper_runner(main_ddp, world_size)
-
-    draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
-               [training_accuracy, testing_accuracy], ["training", "testing"], "Transformer accuracy curve", "accuracy")
-    draw_graph(np.arange(start=start_epoch, stop=start_epoch + args.epoch), training_time_epoch, "training time",
-               "Transformer time for training", "time(sec.)")
