@@ -45,7 +45,7 @@ def distributed_warpper_runner(distributed_wrapper, world_size, *func_args):
 
 
 def draw_graph(xs, ys, labels, title, metric):
-    plt.figure()
+    plt.figure(figsize=(12, 8))
     if isinstance(xs[0], list) or isinstance(xs[0], np.ndarray):
         for x_list, y_list, label in zip(xs, ys, labels):
             plt.plot(x_list, y_list, label=label, linewidth=2)
