@@ -26,6 +26,7 @@ warnings.filterwarnings("ignore")
 from utils import *
 from ngd_optimizer import NGD
 from torch.utils.data.distributed import DistributedSampler
+from torch.utils.data.backward_compatibility import worker_init_fn
 
 # from torch_ort import ORTModule
 """
@@ -89,7 +90,9 @@ class AG_NEWS_DATASET:
                                    collate_fn=self.generate_batch,
                                    num_workers=num_workers,
                                    pin_memory=True,
-                                   persistent_workers=True)
+                                   persistent_workers=True,
+                                   worker_init_fn=worker_init_fn,
+                                   drop_last=True)
         else:
             train_dl = DataLoaderX(self.train_ds,
                                    batch_size=self.batch_size,
@@ -97,14 +100,17 @@ class AG_NEWS_DATASET:
                                    collate_fn=self.generate_batch,
                                    num_workers=num_workers,
                                    pin_memory=True,
-                                   persistent_workers=True)
+                                   persistent_workers=True,
+                                   worker_init_fn=worker_init_fn,
+                                   drop_last=True)
         test_dl = DataLoaderX(self.test_ds,
                               batch_size=self.batch_size,
                               shuffle=False,
                               collate_fn=self.generate_batch,
                               num_workers=num_workers,
                               pin_memory=True,
-                              persistent_workers=True)
+                              persistent_workers=True,
+                              worker_init_fn=worker_init_fn)
 
         return train_dl, test_dl
 
