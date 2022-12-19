@@ -185,9 +185,9 @@ def train(model, criterion, alpha, ngd, rank=0):
     peak_memory_allocated = 0
     ##
     if ngd:
-        optimizer = NGD(model.parameters(), lr=args.lr)
+        optimizer = NGD(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     else:
-        optimizer = SGD(model.parameters(), lr=args.lr)
+        optimizer = SGD(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = MultiStepLR(optimizer, milestones=[10, 15], gamma=0.1)
 
     for epoch in range(start_epoch, epochs_total):
@@ -298,6 +298,8 @@ def parse():
     parser.add_argument("--alpha", help="alpha for beta distribution", default=0.99, type=float)
     parser.add_argument("--distributed", help="whether to turn on distributed training", action="store_true")
     parser.add_argument("--ngd", action="store_true")
+    parser.add_argument("--weight_decay", help="whether to turn on distributed training", default=0, type=float)
+    parser.add_argument("--momentum", help="whether to turn on distributed training", default=0, type=float)
     args = parser.parse_args()
     return args
 
