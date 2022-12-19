@@ -86,7 +86,7 @@ class AG_NEWS_DATASET:
         # print(self.train_ds.__len__())
 
         self.train_ds = torch.utils.data.Subset(self.train_ds, list(range(0, len(self.train_ds), 10)))
-        self.test_ds = torch.utils.data.Subset(self.test_ds, list(range(0, len(self.train_ds), 10)))
+        self.test_ds = torch.utils.data.Subset(self.test_ds, list(range(0, len(self.test_ds), 10)))
 
         # print(self.train_ds.__len__())
 
