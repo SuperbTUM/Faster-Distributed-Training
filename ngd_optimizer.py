@@ -30,7 +30,6 @@ class OnlineNaturalGradient:
         self.update_period = update_period
         assert 0 < eta < 1
         self.eta = eta
-        self.rank = rank
 
         # epsilon and delta are two values involved in making sure the Fisher
         # matrix isn't singular and that we don't get NaN's appearing; we don't
@@ -218,8 +217,8 @@ class OnlineNaturalGradient:
             L_t = torch.mm(H_t.transpose(0, 1), H_t)  # L_t = H_t^T H_t
         K_t = torch.mm(J_t, J_t.transpose(0, 1))  # K_t = J_t J_t^T
 
-        K_t_cpu = K_t.to('cpu')
-        L_t_cpu = L_t.to('cpu')
+        # K_t_cpu = K_t.to('cpu')
+        # L_t_cpu = L_t.to('cpu')
 
         # d_t_sum and beta_t are python floats.
         # in the math, d_t_sum corresponds to tr(D_t).
@@ -228,6 +227,7 @@ class OnlineNaturalGradient:
 
         # e_t is a torch.tensor with shape (rank,) on the CPU.
         # e_{tii} = 1/(\beta_t/d_{tii} + 1)
+
         e_t_cpu = 1.0 / (beta_t / d_t_cpu + 1.0)
         sqrt_e_t_cpu = torch.sqrt(e_t_cpu)
         inv_sqrt_e_t_cpu = 1.0 / sqrt_e_t_cpu
@@ -237,7 +237,7 @@ class OnlineNaturalGradient:
         # contains the derivatives to the fourth power which can otherwise get
         # large.  we'll divide by this when creating Z_t, and multiply by it
         # when using Z_t.
-        z_t_scale = max(1.0, K_t_cpu.trace().item())
+        z_t_scale = max(1.0, K_t.trace().item())
         # see eqn:zt in natural-gradient-online.h (the C++ code).  We are computing,
         # Z_t  = (\eta/N)^2 E_t^{-0.5} K_t E_t^{-0.5}
         #   +(\eta/N)(1-\eta) E_t^{-0.5} L_t E_t^{-0.5} (D_t + \rho_t I)
@@ -255,14 +255,13 @@ class OnlineNaturalGradient:
         outer_product1 = ((eta / N) * (1 - eta) / z_t_scale) * \
                          torch.ger(inv_sqrt_e_t_cpu, inv_sqrt_e_t_cpu * d_t_plus_rho_t)
 
-        Z_t_cpu = (K_t_cpu * inv_sqrt_e_t_outer +
-                   L_t_cpu * (outer_product1 + outer_product1.transpose(0, 1)) +
+        Z_t_cpu = (K_t * inv_sqrt_e_t_outer +
+                   L_t * (outer_product1 + outer_product1.transpose(0, 1)) +
                    (((1 - eta) ** 2 / z_t_scale) * (d_t_plus_rho_t * d_t_plus_rho_t)).diag())
 
         # do the symmetric eigenvalue decomposition Z_t = U_t C_t U_t^T; we do this
         # on the CPU as this kind of algorithm is normally super slow on GPUs, at least
         # on smallish dimensions (note: rank <= 80, with the default configuration).
-        # (c, U) = Z_t_cpu.symeig(True)
         (c, U) = torch.linalg.eigh(Z_t_cpu, UPLO='U')
         # reverse the eigenvalues and their corresponding eigenvectors from largest
         # to smallest.  c_t_cpu still has the scale `1/z_t_scale`.
@@ -276,11 +275,11 @@ class OnlineNaturalGradient:
                    (Z_t_cpu * Z_t_cpu).sum()
         condition_threshold = 1.0e+06
         c_t_floor = ((rho_t * (1.0 - eta)) ** 2) / z_t_scale
-        c_t_cpu = torch.max(c_t_cpu, torch.Tensor(
-            [c_t_floor]))  # c_t_cpu.floor_(c_t_floor)
+        c_t_cpu = torch.max(c_t_cpu, torch.tensor(
+            [c_t_floor], device=self.device))  # c_t_cpu.floor_(c_t_floor)
         # sqrt_c_t_cpu no longer has the `1/z_t_scale` factor, i.e. it is now
         # the same value as in the math.
-        sqrt_c_t = c_t_cpu.to(self.device).sqrt() * math.sqrt(z_t_scale)
+        sqrt_c_t = c_t_cpu.sqrt() * math.sqrt(z_t_scale)
         inv_sqrt_c_t = (1.0 / sqrt_c_t)
         # \rho_{t+1} = 1/(D - R) (\eta/N tr(X_t X_t^T) + (1-\eta)(D \rho_t + tr(D_t)) - tr(C_t^{0.5})).
         rho_t1 = (1.0 / (dim - rank)) * ((eta / N) * tr_X_Xt.item() +
@@ -290,8 +289,8 @@ class OnlineNaturalGradient:
         floor_val = max(self.epsilon, self.delta * sqrt_c_t.max().item())
         # D_{t+1} = C_t^{0.5} - \rho_{t+1} I,  with diagonal elements floored to floor_val.
         # we store only the diagonal.
-        d_t1_cpu = torch.max(sqrt_c_t.to('cpu') - rho_t1,
-                             torch.tensor(floor_val, dtype=self.dtype))
+        d_t1_cpu = torch.max(sqrt_c_t - rho_t1,
+                             torch.tensor(floor_val, dtype=self.dtype, device=self.device))
         if rho_t1 < floor_val:
             rho_t1 = floor_val
 
@@ -304,18 +303,18 @@ class OnlineNaturalGradient:
         # E_t above. These are diagonal matrices and we store just the diagonal
         # part.
         e_t1_cpu = 1.0 / (beta_t1 / d_t1_cpu + 1.0)
-        sqrt_e_t1 = torch.sqrt(e_t1_cpu.to(self.device))
+        sqrt_e_t1 = torch.sqrt(e_t1_cpu)
 
         w_t_coeff = (((1.0 - eta) / (eta / N)) *
-                     (d_t_cpu + rho_t)).to(self.device)
+                     (d_t_cpu + rho_t))
         # B_t = J_t + (1-\eta)/(\eta/N) (D_t + \rho_t I) W_t
         B_t = torch.addcmul(J_t, w_t_coeff.unsqueeze(1), W_t)
 
         # A_t = (\eta/N) E_{t+1}^{0.5} C_t^{-0.5} U_t^T E_t^{-0.5}
         left_product = torch.tensor(
             eta / N, device=self.device, dtype=self.dtype) * sqrt_e_t1 * inv_sqrt_c_t
-        A_t = U_t_cpu.to(self.device).transpose(0, 1) * torch.ger(left_product,
-                                                                  inv_sqrt_e_t_cpu.to(self.device))
+        A_t = U_t_cpu.transpose(0, 1) * torch.ger(left_product,
+                                                                  inv_sqrt_e_t_cpu)
         # W_{t+1} = A_t B_t
         W_t1 = torch.mm(A_t, B_t)
         # End the part of the code that in the C++ version was called ComputeWt1.
@@ -387,7 +386,7 @@ class OnlineNaturalGradient:
         # d_t will be on the CPU, as we need to do some sequential operations
         # on it.
         self.d_t_cpu = self.epsilon * \
-                       torch.ones((self.rank,), dtype=self.dtype)
+                       torch.ones((self.rank,), dtype=self.dtype, device=self.device)
         # W_t is on self.device (possibly a GPU).
 
         # E_tii is a scalar here, since it's the same for all i.

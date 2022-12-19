@@ -127,7 +127,7 @@ def load_best_performance(args, num_class):
         # Load checkpoint.
         print('==> Resuming from checkpoint..')
         assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-        checkpoint = torch.load('./checkpoint/ckpt.pth')
+        checkpoint = torch.load('./checkpoint/transformer_ckpt.pth')
         best_acc = max(best_acc, checkpoint['acc'])
         start_epoch = checkpoint['epoch']
     return best_acc, start_epoch
@@ -149,7 +149,7 @@ def load_model(args, num_class, vocab):
         # Load checkpoint.
         print('==> Resuming from checkpoint..')
         assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-        checkpoint = torch.load('./checkpoint/ckpt.pth')
+        checkpoint = torch.load('./checkpoint/transformer_ckpt.pth')
         model.load_state_dict(checkpoint['net'])
     return model, loss_fn
 

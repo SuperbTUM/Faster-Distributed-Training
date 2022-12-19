@@ -417,7 +417,7 @@ def get_model(args, classes):
         # Load checkpoint.
         print('==> Resuming from checkpoint..')
         assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-        checkpoint = torch.load('./checkpoint/ckpt.pth')
+        checkpoint = torch.load('./checkpoint/resnet_ckpt.pth')
         net.load_state_dict(checkpoint['net'])
 
     criterion = nn.CrossEntropyLoss()
@@ -580,7 +580,7 @@ def test(epoch, testloader, criterion, net, rank=0):
             }
             if not os.path.isdir('checkpoint'):
                 os.mkdir('checkpoint')
-            torch.save(state, './checkpoint/ckpt.pth')
+            torch.save(state, './checkpoint/resnet_ckpt.pth')
             best_acc = acc
         # if args.distributed:
         #     dist.barrier()
