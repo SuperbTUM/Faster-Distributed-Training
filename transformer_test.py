@@ -57,11 +57,12 @@ def pad_sequence(sequences, batch_first=False, max_len=None, padding_value=0):
 
 
 class AG_NEWS_DATASET:
-    def __init__(self, tokenizer=None, batch_size=32, max_sen_len=None):
+    def __init__(self, tokenizer=None, batch_size=32, max_sen_len=None, sample_rate=1.0):
         self.tokenizer = tokenizer
         self.specials = ['[UNK]', '[PAD]', '[CLS]']
         self.batch_size = batch_size
         self.max_sen_len = 100
+        self.sample_rate = sample_rate
         train_ds = AG_NEWS(root='./data', split='train')
         self.train_ds = train_ds.to_map_datapipe(key_value_fn=transformation)
         self.test_ds = AG_NEWS(root='./data', split='test')
@@ -81,6 +82,14 @@ class AG_NEWS_DATASET:
         return batch_sentence, batch_label, attn_mask
 
     def load_data(self, distributed=False, num_workers=2):
+
+        # print(self.train_ds.__len__())
+
+        self.train_ds = torch.utils.data.Subset(self.train_ds, list(range(0, len(self.train_ds), 10)))
+        self.test_ds = torch.utils.data.Subset(self.test_ds, list(range(0, len(self.train_ds), 10)))
+
+        # print(self.train_ds.__len__())
+
         if distributed:
             train_sampler = DistributedSampler(dataset=self.train_ds)
             train_dl = DataLoaderX(dataset=self.train_ds,
@@ -298,8 +307,8 @@ def parse():
     parser.add_argument("--alpha", help="alpha for beta distribution", default=0.99, type=float)
     parser.add_argument("--distributed", help="whether to turn on distributed training", action="store_true")
     parser.add_argument("--ngd", action="store_true")
-    parser.add_argument("--weight_decay", help="whether to turn on distributed training", default=0, type=float)
-    parser.add_argument("--momentum", help="whether to turn on distributed training", default=0, type=float)
+    parser.add_argument("--weight_decay", help="weight decay", default=0, type=float)
+    parser.add_argument("--momentum", help="momentum", default=0, type=float)
     args = parser.parse_args()
     return args
 
