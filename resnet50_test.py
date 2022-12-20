@@ -432,7 +432,7 @@ def get_optimizer(net):
     if args.ngd:
         optimizer = NGD(net.parameters(), lr=lr,
                         momentum=0.9, weight_decay=5e-4)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 2, gamma=0.75)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [10, 20], gamma=0.2)
     else:
         optimizer = optim.SGD(net.parameters(), lr=lr,
                               momentum=0.9, weight_decay=5e-4)
