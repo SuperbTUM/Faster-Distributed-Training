@@ -425,12 +425,16 @@ def get_model(args, classes):
 
 
 def get_optimizer(net):
+    if args.distributed:
+        lr = args.lr * 4
+    else:
+        lr = args.lr
     if args.ngd:
-        optimizer = NGD(net.parameters(), lr=args.lr,
+        optimizer = NGD(net.parameters(), lr=lr,
                         momentum=0.9, weight_decay=5e-4)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 2, gamma=0.75)
     else:
-        optimizer = optim.SGD(net.parameters(), lr=args.lr,
+        optimizer = optim.SGD(net.parameters(), lr=lr,
                               momentum=0.9, weight_decay=5e-4)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
     return optimizer, scheduler

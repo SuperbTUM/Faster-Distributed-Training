@@ -1,11 +1,11 @@
-lrs=( "0.0001" "0.001" "0.01" )
-wds=( "0.0005" "0.0001" "0.005" )
+alphas=( "0.99" "0.9" "0.8" )
+gammas=( "0.75" "0.85" "0.95" )
 
-for lr in ${lrs[@]}
+for alpha in ${alphas[@]}
 do
-    for wd in ${wds[@]}
+    for gamma in ${gammas[@]}
     do
-	echo "python ./resnet50_tuning.py --workers 4 --bs 128 --ngd --lr ${lr} --weighted_decay ${wd} --epoch 5"
-        python ./resnet50_tuning.py --workers 4 --bs 128 --ngd --lr ${lr} --weight_decay ${wd} --epoch 5
+	echo "python ./resnet50_tuning.py --workers 4 --bs 256 --ngd --alpha ${alpha} --gamma ${gamma} --epoch 5"
+        python ./resnet50_tuning.py --workers 4 --bs 256 --ngd --alpha ${alpha} --gamma ${gamma} --epoch 5
     done
 done

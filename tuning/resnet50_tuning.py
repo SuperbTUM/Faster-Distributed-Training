@@ -45,6 +45,7 @@ def parse():
     parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
     parser.add_argument('--lr', default=0.02, type=float, help='learning rate')
     parser.add_argument("--weight_decay", default=5e-4, type=float, help="set up weight decay for optimizer")
+    parser.add_argument("--gamma", default=0.75, type=float)
     parser.add_argument('--resume', '-r', action='store_true',
                         help='resume from checkpoint')
     parser.add_argument("--epoch", default=50, type=int, help="epoch num for training")
@@ -431,7 +432,7 @@ def get_optimizer(net):
     if args.ngd:
         optimizer = NGD(net.parameters(), lr=args.lr,
                         momentum=0.9, weight_decay=args.weight_decay)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 2, gamma=0.75)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 2, gamma=args.gamma)
     else:
         optimizer = optim.SGD(net.parameters(), lr=args.lr,
                               momentum=0.9, weight_decay=args.weight_decay)

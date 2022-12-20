@@ -190,10 +190,14 @@ def train(model, criterion, alpha, ngd, rank=0):
     iterator = tqdm(train_dl)
     peak_memory_allocated = 0
     ##
-    if ngd:
-        optimizer = NGD(model.parameters(), lr=args.lr)
+    if args.distributed:
+        lr = args.lr * 4
     else:
-        optimizer = SGD(model.parameters(), lr=args.lr)
+        lr = args.lr
+    if ngd:
+        optimizer = NGD(model.parameters(), lr=lr, weight_decay=0., momentum=0.)
+    else:
+        optimizer = SGD(model.parameters(), lr=lr, weight_decay=0., momentum=0.)
     scheduler = MultiStepLR(optimizer, milestones=[10, 15], gamma=0.1)
 
     for epoch in range(start_epoch, epochs_total):
