@@ -55,15 +55,15 @@ During the training, if the pre-assigned port has been occupied, please seek for
 
 We observed a faster training process with our bag of tricks, with ~2.5x faster.
 
- ![img](.\figures\time.png)
+ ![avatar](./figures/time.png)
 
 We observed NGD+mixup is positive in model convergence, especially when apply large batch (bs=256) training.
 
- ![img](.\figures\training_ngd_batch_compare.png)
+ ![avatar](./figures/training_ngd_batch_compare.png)
 
 We also observed meta mixup training leads to better performance.
 
- ![img](.\figures\ngd_meta.png)
+ ![avatar](./figures/ngd_meta.png)
 
 
 
