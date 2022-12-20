@@ -184,10 +184,6 @@ def train(model, criterion, alpha, ngd, rank=0):
     train_dl, test_dl = load_dataloader(args.batch_size, args.workers)
 
     model.train()
-    correct = 0
-    total = 0
-    batch_idx = 0
-    iterator = tqdm(train_dl)
     peak_memory_allocated = 0
     ##
     if args.distributed:
@@ -201,6 +197,11 @@ def train(model, criterion, alpha, ngd, rank=0):
     scheduler = MultiStepLR(optimizer, milestones=[10, 15], gamma=0.1)
 
     for epoch in range(start_epoch, epochs_total):
+        correct = torch.zeros(1).to(rank)
+        total = torch.zeros(1).to(rank)
+        batch_idx = 0
+        iterator = tqdm(train_dl)
+
         start = time.monotonic()
         for tokens, labels, masks in iterator:
             labels = labels.to(device, non_blocking=True) - 1
@@ -236,18 +237,21 @@ def train(model, criterion, alpha, ngd, rank=0):
 
             descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(batch_idx,
                                                                                     loss / (batch_idx + 1),
-                                                                                    100. * correct / total, correct,
-                                                                                    total)
+                                                                                    100. * (correct / total).cpu().item(), int(correct.cpu().item()),
+                                                                                    int(total.cpu().item()))
             iterator.set_description(descriptor)
             batch_idx += 1
         end = time.monotonic()
+        if args.distributed:
+            dist.all_reduce(correct, op=dist.ReduceOp.SUM)
+            dist.all_reduce(total, op=dist.ReduceOp.SUM)
         ################
         training_time_epoch[epoch - start_epoch] += end - start
+        training_accuracy.append(100. * (correct / total).cpu().item())
         scheduler.step()
         test(epoch, test_dl, model, rank)
 
     if rank == 0:
-        training_accuracy.append(100. * correct / total)
         peak_memory_allocated += torch.cuda.max_memory_allocated()
         torch.cuda.reset_peak_memory_stats()
         print("Peak memory allocated: {:.2f} GB".format(peak_memory_allocated / 1024 ** 3))

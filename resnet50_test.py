@@ -440,6 +440,13 @@ def get_optimizer(net):
     return optimizer, scheduler
 
 
+# If model is not specified as DDP
+def average_gradients(model):
+    for param in model.parameters():
+        dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
+        param.grad.data /= 4
+
+
 # Training
 def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
     optimizer, scheduler = get_optimizer(net)
@@ -447,9 +454,9 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
     # testloader = data_preparation_test(testset, args.bs, args.workers)
     for epoch in range(start_epoch, start_epoch + args.epoch):
         net.train()
-        train_loss = 0
-        correct = 0
-        total = 0
+        train_loss = torch.zeros(1).to(rank)
+        correct = torch.zeros(1).to(rank)
+        total = torch.zeros(1).to(rank)
         batch_idx = 0
         peak_memory_allocated = 0
         iterator = tqdm(trainloader)
@@ -478,6 +485,8 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
                         loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
 
                 scaler.scale(loss).backward()
+                # if args.distributed:
+                #     average_gradients(net)
                 scaler.step(optimizer)
                 scaler.update()
 
@@ -486,7 +495,12 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
                 total += targets.size(0)
                 correct += predicted.eq(targets).sum().item()
 
-                descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(batch_idx, train_loss/(batch_idx+1), 100.*correct/total, correct, total)
+                descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(
+                    batch_idx,
+                    train_loss.cpu().item()/(batch_idx+1),
+                    100.*(correct/total).cpu().item(),
+                    int(correct.cpu().item()),
+                    int(total.cpu().item()))
                 iterator.set_description(descriptor)
                 batch_idx += 1
         else:
@@ -522,17 +536,24 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
                 total += targets.size(0)
                 correct += predicted.eq(targets).sum().item()
 
-                descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(batch_idx,
-                                                                                        train_loss / (batch_idx + 1),
-                                                                                        100. * correct / total, correct,
-                                                                                        total)
+                descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(
+                    batch_idx,
+                    train_loss.cpu().item()/(batch_idx+1),
+                    100.*(correct/total).cpu().item(),
+                    int(correct.cpu().item()),
+                    int(total.cpu().item()))
                 iterator.set_description(descriptor)
                 batch_idx += 1
         ################
         end = time.monotonic()
 
+        if args.distributed:
+            dist.all_reduce(train_loss, op=dist.ReduceOp.SUM)
+            dist.all_reduce(correct, op=dist.ReduceOp.SUM)
+            dist.all_reduce(total, op=dist.ReduceOp.SUM)
+
         training_time_epoch[epoch-start_epoch] += (end - start)
-        training_acc[epoch-start_epoch] += (100. * correct / total)
+        training_acc[epoch-start_epoch] += (100. * correct / total).cpu().item()
         peak_memory_allocated += torch.cuda.max_memory_allocated()
         torch.cuda.reset_peak_memory_stats()
         print("Peak memory allocated: {:.2f} GB".format(peak_memory_allocated/1024 ** 3))
