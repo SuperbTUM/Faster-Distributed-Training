@@ -1,12 +1,12 @@
 ## Introduction
 
-This project aims to propose a faster and more robust distributed training approach with natural gradient descent, mixup, Apex/ORT training, along with a series of training acceleration tricks including non-blocking data loading, module fusion and distributed training with omp and torchrun. We evaluate our proposal with two major deep learning architectures, CNN and transformer, with the tasks being classification tasks.
+The motivation of this project is to reduce GPU hours and memory cost on large models and data batch. We aim to propose a faster and more robust distributed training approach with consideration of two major factors: speed and accuracy. For accuracy, we applied natural gradient descent, mixup and its variant; for speed, we deployed Apex/ORT training, along with a series of training acceleration tricks including non-blocking data loading, module fusion and distributed training with omp and torchrun. We evaluate our proposal with two major deep learning architectures, CNN and transformer, with the tasks being classification tasks.
 
 
 
-## Layout
+## Code Structure
 
-The folder `tuning` serves for hyper-parameter tuning. The core difference is we sample a subset of original dataset to get a fast hyper-parameter determination with shell scripts. The main entrances are `resnet50_test.py` and `transformer_test.py`. Others can be viewed as helper functions.
+The folder `tuning` serves for hyper-parameter tuning. The core difference from regular training script is we sample a subset of original dataset to get a fast hyper-parameter determination with shell scripts. The major implementations are `resnet50_test.py` and `transformer_test.py`, and all bash files including ones in `tuning` folder are executable scripts to trigger training. Others can be viewed as helper functions.
 
 
 
@@ -53,15 +53,15 @@ During the training, if the pre-assigned port has been occupied, please seek for
 
 ## Results
 
-We observed a faster training process with our bag of tricks, with ~2.5x faster.
+We conducted experiments on both CNN and transformer, both image and text classification tasks (mainly CNN). We firstly observed a faster training process with our bag of tricks, with ~2.5x faster.
 
  ![avatar](./figures/time.png)
 
-We observed NGD+mixup is positive in model convergence, especially when apply large batch (bs=256) training.
+We observed NGD+mixup acts as a positive role in model convergence, especially when apply large batch (bs=256) training.
 
  ![avatar](./figures/training_ngd_batch_compare.png)
 
-We also observed meta mixup training leads to better performance.
+We also observed meta mixup training leads to better performance with minimum extra parameters.
 
  ![avatar](./figures/ngd_meta.png)
 
