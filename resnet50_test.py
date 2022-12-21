@@ -487,13 +487,17 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
                 scaler.scale(loss).backward()
                 # if args.distributed:
                 #     average_gradients(net)
+                scaler.unscale_(optimizer)
+                # Since the gradients of optimizer's assigned params are unscaled, clips as usual:
+                torch.nn.utils.clip_grad_norm_(net.parameters(), 10.)
                 scaler.step(optimizer)
                 scaler.update()
 
                 train_loss += loss.item()
                 _, predicted = outputs.max(1)
                 total += targets.size(0)
-                correct += predicted.eq(targets).sum().item()
+                correct += (lam * predicted.eq(targets_a.data).sum().float()
+                            + (1 - lam) * predicted.eq(targets_b.data).sum().float())
 
                 descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(
                     batch_idx,
@@ -534,7 +538,8 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
                 train_loss += loss.item()
                 _, predicted = outputs.max(1)
                 total += targets.size(0)
-                correct += predicted.eq(targets).sum().item()
+                correct += (lam * predicted.eq(targets_a.data).sum().float()
+                            + (1 - lam) * predicted.eq(targets_b.data).sum().float())
 
                 descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(
                     batch_idx,

@@ -233,7 +233,8 @@ def train(model, criterion, alpha, ngd, rank=0):
 
             _, predicted = logits.max(1)
             total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
+            correct += (lam * predicted.eq(labels_a.data).sum().float()
+                            + (1 - lam) * predicted.eq(labels_b.data).sum().float())
 
             descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(batch_idx,
                                                                                     loss / (batch_idx + 1),
