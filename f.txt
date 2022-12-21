@@ -1,0 +1,318 @@
+(base) lisen@mango:/home/lisen/Faster-Distributed-Training$ bash tuning.sh 
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.0001 --weighted_decay 0.0005 --epoch 5
+Traceback (most recent call last):
+  File "./transformer_test.py", line 360, in <module>
+    train(model, criterion, alpha, ngd)
+  File "./transformer_test.py", line 189, in train
+    train_dl, test_dl = load_dataloader(args.batch_size, args.workers)
+  File "./transformer_test.py", line 130, in load_dataloader
+    train_dl, test_dl = AG_NEWS_DATASET(tokenizer, batch_size=batch_size).load_data(args.distributed, num_workers)
+  File "./transformer_test.py", line 68, in __init__
+    test_ds = IterableWrapper([(i, data) for i, data in enumerate(test_ds)])
+NameError: name 'IterableWrapper' is not defined
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.0001 --weighted_decay 0.0001 --epoch 5
+Traceback (most recent call last):
+  File "./transformer_test.py", line 360, in <module>
+    train(model, criterion, alpha, ngd)
+  File "./transformer_test.py", line 189, in train
+    train_dl, test_dl = load_dataloader(args.batch_size, args.workers)
+  File "./transformer_test.py", line 130, in load_dataloader
+    train_dl, test_dl = AG_NEWS_DATASET(tokenizer, batch_size=batch_size).load_data(args.distributed, num_workers)
+  File "./transformer_test.py", line 68, in __init__
+    test_ds = IterableWrapper([(i, data) for i, data in enumerate(test_ds)])
+NameError: name 'IterableWrapper' is not defined
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.0001 --weighted_decay 0.005 --epoch 5
+Traceback (most recent call last):
+  File "./transformer_test.py", line 360, in <module>
+    train(model, criterion, alpha, ngd)
+  File "./transformer_test.py", line 189, in train
+    train_dl, test_dl = load_dataloader(args.batch_size, args.workers)
+  File "./transformer_test.py", line 130, in load_dataloader
+    train_dl, test_dl = AG_NEWS_DATASET(tokenizer, batch_size=batch_size).load_data(args.distributed, num_workers)
+  File "./transformer_test.py", line 68, in __init__
+    test_ds = IterableWrapper([(i, data) for i, data in enumerate(test_ds)])
+NameError: name 'IterableWrapper' is not defined
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.001 --weighted_decay 0.0005 --epoch 5
+^CTraceback (most recent call last):
+  File "./transformer_test.py", line 12, in <module>
+    from transformers import AutoTokenizer
+  File "<frozen importlib._bootstrap>", line 1039, in _handle_fromlist
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/transformers/__init__.py", line 3026, in __getattr__
+    return super().__getattr__(name)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/transformers/file_utils.py", line 1890, in __getattr__
+    value = getattr(module, name)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/transformers/file_utils.py", line 1889, in __getattr__
+    module = self._get_module(self._class_to_module[name])
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/transformers/models/auto/__init__.py", line 216, in _get_module
+    return importlib.import_module("." + module_name, self.__name__)
+  File "/home/lisen/anaconda3/lib/python3.8/importlib/__init__.py", line 127, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/transformers/models/auto/tokenization_auto.py", line 66, in <module>
+    from ..tapas.tokenization_tapas import TapasTokenizer
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/transformers/models/tapas/tokenization_tapas.py", line 44, in <module>
+    import pandas as pd
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/pandas/__init__.py", line 51, in <module>
+    from pandas.core.api import (
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/pandas/core/api.py", line 31, in <module>
+    from pandas.core.groupby import Grouper, NamedAgg
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/pandas/core/groupby/__init__.py", line 1, in <module>
+    from pandas.core.groupby.generic import DataFrameGroupBy, NamedAgg, SeriesGroupBy
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/pandas/core/groupby/generic.py", line 65, in <module>
+    from pandas.core.frame import DataFrame
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/pandas/core/frame.py", line 155, in <module>
+    from pandas.core.series import Series
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/pandas/core/series.py", line 5006, in <module>
+    ops.add_flex_arithmetic_methods(Series)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/pandas/core/ops/methods.py", line 63, in add_flex_arithmetic_methods
+    new_methods = _create_methods(cls, flex_arith_method, flex_comp_method)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/pandas/core/ops/methods.py", line 99, in _create_methods
+    "rfloordiv": arith_method(rfloordiv),
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/pandas/core/ops/__init__.py", line 157, in flex_method_SERIES
+    def flex_wrapper(self, other, level=None, fill_value=None, axis=0):
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/pandas/util/_decorators.py", line 477, in __call__
+    func.__doc__ = dedent(self.join.join(docitems))
+  File "/home/lisen/anaconda3/lib/python3.8/textwrap.py", line 431, in dedent
+    indents = _leading_whitespace_re.findall(text)
+KeyboardInterrupt
+^C
+(base) lisen@mango:/home/lisen/Faster-Distributed-Training$ bash tuning.sh 
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.0001 --weighted_decay 0.0005 --epoch 5
+Traceback (most recent call last):
+  File "./transformer_test.py", line 361, in <module>
+    train(model, criterion, alpha, ngd)
+  File "./transformer_test.py", line 190, in train
+    train_dl, test_dl = load_dataloader(args.batch_size, args.workers)
+  File "./transformer_test.py", line 131, in load_dataloader
+    train_dl, test_dl = AG_NEWS_DATASET(tokenizer, batch_size=batch_size).load_data(args.distributed, num_workers)
+  File "./transformer_test.py", line 69, in __init__
+    test_ds = IterableWrapper([(i, data) for i, data in enumerate(test_ds)])
+UnboundLocalError: local variable 'test_ds' referenced before assignment
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.0001 --weighted_decay 0.0001 --epoch 5
+^CTraceback (most recent call last):
+  File "./transformer_test.py", line 360, in <module>
+    model, criterion = load_model(args, num_class, vocab)
+  File "./transformer_test.py", line 152, in load_model
+    model = Transformer(num_class, vocab)
+  File "/home/lisen/Faster-Distributed-Training/transformer.py", line 42, in __init__
+    self.input_embeddings = Embeddings(d_model, vocab, maxlen)
+  File "/home/lisen/Faster-Distributed-Training/transformer.py", line 119, in __init__
+    self.pos_embedding_idx = nn.Parameter(torch.arange(start=0, end=self.maxlen, device=device), requires_grad=False)
+KeyboardInterrupt
+^C
+(base) lisen@mango:/home/lisen/Faster-Distributed-Training$ bash tuning.sh 
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.0001 --weighted_decay 0.0005 --epoch 5
+batch idx: 0, Loss: 3.726 | Acc: 25.000 (30/120): 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:14<00:00, 14.40s/it]
+batch idx: 5, Acc: 27.632 (210/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00,  7.87it/s]
+Saving..
+batch idx: 5, Acc: 27.632 (210/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.46it/s]
+batch idx: 5, Acc: 27.632 (210/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.33it/s]
+batch idx: 5, Acc: 27.632 (210/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.92it/s]
+batch idx: 5, Acc: 27.632 (210/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.60it/s]
+Peak memory allocated: 0.89 GB
+Traceback (most recent call last):
+  File "./transformer_test.py", line 363, in <module>
+    draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
+  File "/home/lisen/Faster-Distributed-Training/utils.py", line 51, in draw_graph
+    plt.plot(x_list, y_list, label=label, linewidth=2)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/pyplot.py", line 2840, in plot
+    return gca().plot(
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_axes.py", line 1743, in plot
+    lines = [*self._get_lines(*args, data=data, **kwargs)]
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 273, in __call__
+    yield from self._plot_args(this, kwargs)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 399, in _plot_args
+    raise ValueError(f"x and y must have same first dimension, but "
+ValueError: x and y must have same first dimension, but have shapes (5,) and (1,)
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.0001 --weighted_decay 0.0001 --epoch 5
+batch idx: 0, Loss: 1.768 | Acc: 28.333 (34/120): 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:15<00:00, 15.73s/it]
+batch idx: 5, Acc: 25.658 (195/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00,  7.34it/s]
+Saving..
+batch idx: 5, Acc: 25.658 (195/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.01it/s]
+batch idx: 5, Acc: 25.658 (195/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.65it/s]
+batch idx: 5, Acc: 25.658 (195/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 21.25it/s]
+batch idx: 5, Acc: 25.658 (195/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.03it/s]
+Peak memory allocated: 0.89 GB
+Traceback (most recent call last):
+  File "./transformer_test.py", line 363, in <module>
+    draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
+  File "/home/lisen/Faster-Distributed-Training/utils.py", line 51, in draw_graph
+    plt.plot(x_list, y_list, label=label, linewidth=2)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/pyplot.py", line 2840, in plot
+    return gca().plot(
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_axes.py", line 1743, in plot
+    lines = [*self._get_lines(*args, data=data, **kwargs)]
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 273, in __call__
+    yield from self._plot_args(this, kwargs)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 399, in _plot_args
+    raise ValueError(f"x and y must have same first dimension, but "
+ValueError: x and y must have same first dimension, but have shapes (5,) and (1,)
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.0001 --weighted_decay 0.005 --epoch 5
+batch idx: 0, Loss: 1.685 | Acc: 25.833 (31/120): 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:15<00:00, 15.30s/it]
+batch idx: 5, Acc: 24.211 (184/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00,  7.93it/s]
+Saving..
+batch idx: 5, Acc: 24.079 (183/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.25it/s]
+batch idx: 5, Acc: 23.947 (182/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.93it/s]
+batch idx: 5, Acc: 23.947 (182/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.94it/s]
+batch idx: 5, Acc: 23.947 (182/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.94it/s]
+Peak memory allocated: 0.89 GB
+Traceback (most recent call last):
+  File "./transformer_test.py", line 363, in <module>
+    draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
+  File "/home/lisen/Faster-Distributed-Training/utils.py", line 51, in draw_graph
+    plt.plot(x_list, y_list, label=label, linewidth=2)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/pyplot.py", line 2840, in plot
+    return gca().plot(
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_axes.py", line 1743, in plot
+    lines = [*self._get_lines(*args, data=data, **kwargs)]
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 273, in __call__
+    yield from self._plot_args(this, kwargs)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 399, in _plot_args
+    raise ValueError(f"x and y must have same first dimension, but "
+ValueError: x and y must have same first dimension, but have shapes (5,) and (1,)
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.001 --weighted_decay 0.0005 --epoch 5
+batch idx: 0, Loss: 1.786 | Acc: 21.667 (26/120): 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:16<00:00, 16.02s/it]
+batch idx: 5, Acc: 22.368 (170/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00,  7.41it/s]
+Saving..
+batch idx: 5, Acc: 22.500 (171/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.70it/s]
+Saving..
+batch idx: 5, Acc: 22.632 (172/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.93it/s]
+Saving..
+batch idx: 5, Acc: 22.105 (168/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.85it/s]
+batch idx: 5, Acc: 22.368 (170/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.37it/s]
+Peak memory allocated: 0.89 GB
+Traceback (most recent call last):
+  File "./transformer_test.py", line 363, in <module>
+    draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
+  File "/home/lisen/Faster-Distributed-Training/utils.py", line 51, in draw_graph
+    plt.plot(x_list, y_list, label=label, linewidth=2)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/pyplot.py", line 2840, in plot
+    return gca().plot(
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_axes.py", line 1743, in plot
+    lines = [*self._get_lines(*args, data=data, **kwargs)]
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 273, in __call__
+    yield from self._plot_args(this, kwargs)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 399, in _plot_args
+    raise ValueError(f"x and y must have same first dimension, but "
+ValueError: x and y must have same first dimension, but have shapes (5,) and (1,)
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.001 --weighted_decay 0.0001 --epoch 5
+batch idx: 0, Loss: 2.376 | Acc: 28.333 (34/120): 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:16<00:00, 16.13s/it]
+batch idx: 5, Acc: 22.632 (172/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00,  7.78it/s]
+Saving..
+batch idx: 5, Acc: 23.026 (175/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.94it/s]
+Saving..
+batch idx: 5, Acc: 23.158 (176/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.73it/s]
+Saving..
+batch idx: 5, Acc: 23.026 (175/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.02it/s]
+batch idx: 5, Acc: 23.026 (175/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.86it/s]
+Peak memory allocated: 0.89 GB
+Traceback (most recent call last):
+  File "./transformer_test.py", line 363, in <module>
+    draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
+  File "/home/lisen/Faster-Distributed-Training/utils.py", line 51, in draw_graph
+    plt.plot(x_list, y_list, label=label, linewidth=2)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/pyplot.py", line 2840, in plot
+    return gca().plot(
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_axes.py", line 1743, in plot
+    lines = [*self._get_lines(*args, data=data, **kwargs)]
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 273, in __call__
+    yield from self._plot_args(this, kwargs)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 399, in _plot_args
+    raise ValueError(f"x and y must have same first dimension, but "
+ValueError: x and y must have same first dimension, but have shapes (5,) and (1,)
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.001 --weighted_decay 0.005 --epoch 5
+batch idx: 0, Loss: 2.575 | Acc: 22.500 (27/120): 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:15<00:00, 15.65s/it]
+batch idx: 5, Acc: 22.500 (171/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00,  7.19it/s]
+Saving..
+batch idx: 5, Acc: 22.500 (171/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.46it/s]
+batch idx: 5, Acc: 22.500 (171/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.43it/s]
+batch idx: 5, Acc: 22.500 (171/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.62it/s]
+batch idx: 5, Acc: 22.500 (171/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.51it/s]
+Peak memory allocated: 0.89 GB
+Traceback (most recent call last):
+  File "./transformer_test.py", line 363, in <module>
+    draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
+  File "/home/lisen/Faster-Distributed-Training/utils.py", line 51, in draw_graph
+    plt.plot(x_list, y_list, label=label, linewidth=2)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/pyplot.py", line 2840, in plot
+    return gca().plot(
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_axes.py", line 1743, in plot
+    lines = [*self._get_lines(*args, data=data, **kwargs)]
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 273, in __call__
+    yield from self._plot_args(this, kwargs)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 399, in _plot_args
+    raise ValueError(f"x and y must have same first dimension, but "
+ValueError: x and y must have same first dimension, but have shapes (5,) and (1,)
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.01 --weighted_decay 0.0005 --epoch 5
+batch idx: 0, Loss: 2.530 | Acc: 21.667 (26/120): 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:15<00:00, 15.65s/it]
+batch idx: 5, Acc: 23.026 (175/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00,  7.88it/s]
+Saving..
+batch idx: 5, Acc: 24.211 (184/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.72it/s]
+Saving..
+batch idx: 5, Acc: 23.816 (181/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.33it/s]
+batch idx: 5, Acc: 26.053 (198/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.94it/s]
+Saving..
+batch idx: 5, Acc: 26.711 (203/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.33it/s]
+Saving..
+Peak memory allocated: 0.89 GB
+Traceback (most recent call last):
+  File "./transformer_test.py", line 363, in <module>
+    draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
+  File "/home/lisen/Faster-Distributed-Training/utils.py", line 51, in draw_graph
+    plt.plot(x_list, y_list, label=label, linewidth=2)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/pyplot.py", line 2840, in plot
+    return gca().plot(
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_axes.py", line 1743, in plot
+    lines = [*self._get_lines(*args, data=data, **kwargs)]
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 273, in __call__
+    yield from self._plot_args(this, kwargs)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 399, in _plot_args
+    raise ValueError(f"x and y must have same first dimension, but "
+ValueError: x and y must have same first dimension, but have shapes (5,) and (1,)
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.01 --weighted_decay 0.0001 --epoch 5
+batch idx: 0, Loss: 2.610 | Acc: 30.000 (36/120): 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:15<00:00, 15.41s/it]
+batch idx: 5, Acc: 25.658 (195/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00,  7.48it/s]
+Saving..
+batch idx: 5, Acc: 25.658 (195/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.51it/s]
+batch idx: 5, Acc: 25.789 (196/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.25it/s]
+Saving..
+batch idx: 5, Acc: 27.500 (209/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.53it/s]
+Saving..
+batch idx: 5, Acc: 22.500 (171/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 20.75it/s]
+Peak memory allocated: 0.89 GB
+Traceback (most recent call last):
+  File "./transformer_test.py", line 363, in <module>
+    draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
+  File "/home/lisen/Faster-Distributed-Training/utils.py", line 51, in draw_graph
+    plt.plot(x_list, y_list, label=label, linewidth=2)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/pyplot.py", line 2840, in plot
+    return gca().plot(
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_axes.py", line 1743, in plot
+    lines = [*self._get_lines(*args, data=data, **kwargs)]
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 273, in __call__
+    yield from self._plot_args(this, kwargs)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 399, in _plot_args
+    raise ValueError(f"x and y must have same first dimension, but "
+ValueError: x and y must have same first dimension, but have shapes (5,) and (1,)
+python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr 0.01 --weighted_decay 0.005 --epoch 5
+batch idx: 0, Loss: 2.456 | Acc: 25.000 (30/120): 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:15<00:00, 15.59s/it]
+batch idx: 5, Acc: 25.395 (193/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00,  7.71it/s]
+Saving..
+batch idx: 5, Acc: 22.500 (171/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.95it/s]
+batch idx: 5, Acc: 22.500 (171/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.86it/s]
+batch idx: 5, Acc: 22.500 (171/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.60it/s]
+batch idx: 5, Acc: 22.500 (171/760): 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 19.19it/s]
+Peak memory allocated: 0.89 GB
+Traceback (most recent call last):
+  File "./transformer_test.py", line 363, in <module>
+    draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
+  File "/home/lisen/Faster-Distributed-Training/utils.py", line 51, in draw_graph
+    plt.plot(x_list, y_list, label=label, linewidth=2)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/pyplot.py", line 2840, in plot
+    return gca().plot(
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_axes.py", line 1743, in plot
+    lines = [*self._get_lines(*args, data=data, **kwargs)]
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 273, in __call__
+    yield from self._plot_args(this, kwargs)
+  File "/home/lisen/anaconda3/lib/python3.8/site-packages/matplotlib/axes/_base.py", line 399, in _plot_args
+    raise ValueError(f"x and y must have same first dimension, but "
+ValueError: x and y must have same first dimension, but have shapes (5,) and (1,)

@@ -26,6 +26,7 @@ warnings.filterwarnings("ignore")
 from utils import *
 from ngd_optimizer import NGD
 from torch.utils.data.distributed import DistributedSampler
+from torchdata.datapipes.iter import IterableWrapper
 
 # from torch_ort import ORTModule
 """
@@ -65,7 +66,10 @@ class AG_NEWS_DATASET:
         self.sample_rate = sample_rate
         train_ds = AG_NEWS(root='./data', split='train')
         self.train_ds = train_ds.to_map_datapipe(key_value_fn=transformation)
-        self.test_ds = AG_NEWS(root='./data', split='test')
+        test_ds = AG_NEWS(root='./data', split='test')
+        test_ds = IterableWrapper([(i, data) for i, data in enumerate(test_ds)])
+        self.test_ds = test_ds.to_map_datapipe()
+
 
     def generate_batch(self, data_batch):
         batch_sentence, batch_label = [], []
@@ -85,8 +89,8 @@ class AG_NEWS_DATASET:
 
         # print(self.train_ds.__len__())
 
-        self.train_ds = torch.utils.data.Subset(self.train_ds, list(range(0, len(self.train_ds), 10)))
-        self.test_ds = torch.utils.data.Subset(self.test_ds, list(range(0, len(self.test_ds), 10)))
+        # self.train_ds = torch.utils.data.Subset(self.train_ds, list(range(0, len(self.train_ds), 1000)))
+        # self.test_ds = torch.utils.data.Subset(self.test_ds, list(range(0, len(self.test_ds), 10)))
 
         # print(self.train_ds.__len__())
 

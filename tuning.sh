@@ -5,7 +5,7 @@ for lr in ${lrs[@]}
 do 
     for wd in ${wds[@]}
     do 
-	echo "python ./transformer_test.py --workers 4 --batch_size 64 --ngd --lr ${lr} --weighted_decay ${wd} --epoch 5"
-        python ./transformer_test.py --workers 4 --batch_size 64 --ngd --lr ${lr} --weight_decay ${wd} --epoch 5
+	echo "python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr ${lr} --weight_decay ${wd} --epoch 5"
+        python ./transformer_test.py --workers 4 --batch_size 128 --ngd --lr ${lr} --weight_decay ${wd} --epoch 5
     done 
 done 
