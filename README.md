@@ -53,6 +53,11 @@ During the training, if the pre-assigned port has been occupied, please seek for
 
 ## Results
 
+We evaluated small batch (64) and large batch training (1024) on CNN and observed intuitive result, with small batch having higher recognition accuracy but slower training speed.
+ ![avatar](./figures/training_batch_compare.png)
+
+It is worth mentioning that training accuracy is lower than testing as we are using Mix-up augmentation.
+
 We conducted experiments on both CNN and transformer, both image and text classification tasks (mainly CNN). We firstly observed a faster training process with our bag of tricks, with ~2.5x faster.
 
  ![avatar](./figures/time.png)
@@ -61,7 +66,7 @@ We observed NGD+mixup acts as a positive role in model convergence, especially w
 
  ![avatar](./figures/training_ngd_batch_compare.png)
 
-We also observed meta mixup training leads to better performance with minimum extra parameters.
+With a step further, we also observed meta mixup training leads to better performance with minimum extra parameters.
 
  ![avatar](./figures/ngd_meta.png)
 
