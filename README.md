@@ -1,13 +1,24 @@
-## Introduction
+# Faster and Stronger ML: Distributed Large Mini-batch Training Optimization
+
+Author: Mingzhe Hu, Lisen Dai
+
+Date: Dec 21, 2022
+
+---
+
+
+## Contribution
 
 The motivation of this project is to reduce GPU hours and memory cost on large models and data batch. We aim to propose a faster and more robust distributed training approach with consideration of two major factors: speed and accuracy. For accuracy, we applied natural gradient descent, mixup and its variant; for speed, we deployed Apex/ORT training, along with a series of training acceleration tricks including non-blocking data loading, module fusion and distributed training with omp and torchrun. We evaluate our proposal with two major deep learning architectures, CNN and transformer, with the tasks being classification tasks.
 
+## Introduction
 
+Nowadays, in deep learning area, models are prone to be more complex and the amount of data increases as well. People hope to use distributed traning to train their model for efficiency. However, there are still some problems.
+As the models grow heavier as well as training dataset grow largers and larger, distributed learning is required in many scenario. However, there are some 
 
 ## Code Structure
 
 The folder `tuning` serves for hyper-parameter tuning. The core difference from regular training script is we sample a subset of original dataset to get a fast hyper-parameter determination with shell scripts. The major implementations are `resnet50_test.py` and `transformer_test.py`, and all bash files including ones in `tuning` folder are executable scripts to trigger training. Others can be viewed as helper functions.
-
 
 
 ## Quick Start
