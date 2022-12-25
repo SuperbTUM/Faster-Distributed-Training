@@ -326,10 +326,12 @@ def data_preparation(trainset, batch_size, workers):
     if distributed:
         train_sampler = DistributedSampler(dataset=trainset)
         trainloader = DataLoaderX(trainset, batch_size=batch_size,
-                                  sampler=train_sampler, num_workers=workers, pin_memory=True, persistent_workers=True)
+                                  sampler=train_sampler, num_workers=workers, pin_memory=True, persistent_workers=True,
+                                  drop_last=True)
     else:
         trainloader = DataLoaderX(
-            trainset, batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True, persistent_workers=True)
+            trainset, batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True,
+            persistent_workers=True, drop_last=True)
     return trainloader
 
 
@@ -360,13 +362,27 @@ def mixup_data(x, y, alpha=.99):
     return mixed_x, y_a, y_b, lam
 
 
-def mixup_data_meta(x, y, rank):
-    batch_size = x.size(0)
-    lam = torch.sigmoid(nn.Parameter(torch.rand(batch_size, 1, 1, 1, device=device)).to(rank))
-    index = torch.randperm(batch_size, device=device).to(rank)
-    mixed_x = lam * x + (1 - lam) * x[index, :]
-    y_a, y_b = y, y[index]
-    return mixed_x, y_a, y_b, lam
+# def mixup_data_meta(x, y, rank):
+#     batch_size = x.size(0)
+#     lam = torch.sigmoid(nn.Parameter(torch.rand(batch_size, 1, 1, 1, device=device)).to(rank))
+#     index = torch.randperm(batch_size, device=device).to(rank)
+#     mixed_x = lam * x + (1 - lam) * x[index, :]
+#     y_a, y_b = y, y[index]
+#     return mixed_x, y_a, y_b, lam
+
+
+class mixup_data_meta(nn.Module):
+    def __init__(self, batch_size, rank):
+        super().__init__()
+        lam = nn.Parameter(torch.rand(batch_size, 1, 1, 1, device=device))
+        lam.data.clamp_(0.0, 1.0)
+        self.lam = torch.sigmoid(lam.to(rank))
+        self.index = torch.randperm(batch_size, device=device).to(rank)
+
+    def forward(self, x, y):
+        mixed_x = self.lam * x + (1 - self.lam) * x[self.index, :]
+        y_a, y_b = y, y[self.index]
+        return mixed_x, y_a, y_b, self.lam
 
 
 # class lam_meta(torch.autograd.Function):
@@ -468,7 +484,8 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
                 if distributed:
                     inputs, targets = inputs.to(rank, non_blocking=True), targets.to(rank, non_blocking=True)
                 if meta_learning:
-                    inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets, rank)
+                    # inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets, rank)
+                    inputs, targets_a, targets_b, lam = mixup_data_meta(args.bs, rank)(inputs, targets)
                 else:
                     inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, alpha)
                 inputs, targets_a, targets_b = map(Variable, (inputs,
@@ -496,8 +513,12 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
                 train_loss += loss.item()
                 _, predicted = outputs.max(1)
                 total += targets.size(0)
-                correct += (lam * predicted.eq(targets_a.data).sum().float()
-                            + (1 - lam) * predicted.eq(targets_b.data).sum().float())
+                if meta_learning:
+                    correct += ((lam.view(-1) * predicted.eq(targets_a.data)).sum().float()
+                                + ((1 - lam.view(-1)) * predicted.eq(targets_b.data)).sum().float())
+                else:
+                    correct += (lam * predicted.eq(targets_a.data).sum().float()
+                                + (1 - lam) * predicted.eq(targets_b.data).sum().float())
 
                 descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(
                     batch_idx,
@@ -516,7 +537,8 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
                 if distributed:
                     inputs, targets = inputs.to(rank), targets.to(rank)
                 if meta_learning:
-                    inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets, rank)
+                    # inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets, rank)
+                    inputs, targets_a, targets_b, lam = mixup_data_meta(args.bs, rank)(inputs, targets)
                 else:
                     inputs, targets_a, targets_b, lam = mixup_data(inputs, targets,
                                                                    alpha)
@@ -538,8 +560,12 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
                 train_loss += loss.item()
                 _, predicted = outputs.max(1)
                 total += targets.size(0)
-                correct += (lam * predicted.eq(targets_a.data).sum().float()
-                            + (1 - lam) * predicted.eq(targets_b.data).sum().float())
+                if meta_learning:
+                    correct += ((lam.view(-1) * predicted.eq(targets_a.data)).sum().float()
+                                + ((1 - lam.view(-1)) * predicted.eq(targets_b.data)).sum().float())
+                else:
+                    correct += (lam * predicted.eq(targets_a.data).sum().float()
+                                + (1 - lam) * predicted.eq(targets_b.data).sum().float())
 
                 descriptor = "batch idx: {}, Loss: {:.3f} | Acc: {:.3f} ({}/{})".format(
                     batch_idx,
