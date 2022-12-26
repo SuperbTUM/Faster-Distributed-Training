@@ -374,12 +374,12 @@ def mixup_data(x, y, alpha=.99):
 class mixup_data_meta(nn.Module):
     def __init__(self, batch_size, rank):
         super().__init__()
-        lam = nn.Parameter(torch.rand(batch_size, 1, 1, 1, device=device))
-        lam.data.clamp_(0.0, 1.0)
-        self.lam = torch.sigmoid(lam.to(rank))
+        self.lam = nn.Parameter(torch.rand(batch_size, 1, 1, 1, device=device)).to(rank)
+        self.lam.data.clamp_(0.0, 1.0)
         self.index = torch.randperm(batch_size, device=device).to(rank)
 
     def forward(self, x, y):
+        self.lam = torch.sigmoid(self.lam)
         mixed_x = self.lam * x + (1 - self.lam) * x[self.index, :]
         y_a, y_b = y, y[self.index]
         return mixed_x, y_a, y_b, self.lam
