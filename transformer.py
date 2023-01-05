@@ -37,7 +37,8 @@ class Transformer(nn.Module):
                  dropout_connection_attention=0.1,
                  dropout_connection_ffn=0.1,
                  dropout_attention=0.1,
-                 dropout_ffn=0.1):
+                 dropout_ffn=0.1,
+                 alpha=0.99):
         super(Transformer, self).__init__()
         self.input_embeddings = Embeddings(d_model, vocab, maxlen)
         self.input_encodings = PositionalEncoding(d_model, dropout_encodings, maxlen)
@@ -51,6 +52,7 @@ class Transformer(nn.Module):
                 d_model, d_ff, dropout_ffn, dropout_connection_ffn))
         self.classifier = Classifier(d_model, d_hidden, n_class)
         self.n_layers = n_layers
+        self.alpha = alpha
 
         self.init_params()
 
@@ -62,9 +64,20 @@ class Transformer(nn.Module):
             x = self.sublayer_attention[i](x, mask)
             x = self.sublayer_ffn[i](x)
             # x = self.layernorm(x)
-        cls_repre = x[:, 0, :]
+        # possible mixup on sentence embeddings
+        if self.alpha > 0:
+            distri = torch.distributions.beta.Beta(self.alpha, self.alpha)
+            lam = distri.sample().item()
+        else:
+            lam = self.alpha
+
+        batch_size = x.size(0)
+        index = torch.randperm(batch_size, device=device)
+        mixed_x = lam * x + (1 - lam) * x[index, :]
+
+        cls_repre = mixed_x[:, 0, :]
         outputs = self.classifier(cls_repre)
-        return outputs
+        return outputs, index, lam
 
     def init_params(self, default_initialization=False):
         # Not mentioned in the paper, but other implementations used xavier.

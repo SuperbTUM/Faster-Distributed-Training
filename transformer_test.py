@@ -143,7 +143,7 @@ def load_model(args, num_class, vocab):
     # loss func
     loss_fn = nn.CrossEntropyLoss()
     # get model
-    model = Transformer(num_class, vocab)
+    model = Transformer(num_class, vocab, alpha=args.alpha)
     model = model.to(device)
     if not args.distributed:
         model = nn.DataParallel(model)
@@ -179,7 +179,7 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
 
-def train(model, criterion, alpha, ngd, rank=0):
+def train(model, criterion, ngd, rank=0):
     ##
     train_dl, test_dl = load_dataloader(args.batch_size, args.workers)
 
@@ -212,15 +212,17 @@ def train(model, criterion, alpha, ngd, rank=0):
                 tokens = tokens.to(rank)
                 masks = masks.to(rank)
 
-            tokens, labels_a, labels_b, lam = mixup_data(tokens, labels,
-                                                         alpha)
-            tokens, labels_a, labels_b = map(Variable, (tokens, labels_a, labels_b))
+            # tokens, labels_a, labels_b, lam = mixup_data(tokens, labels,
+            #                                              alpha)
+            # tokens, labels_a, labels_b = map(Variable, (tokens, labels_a, labels_b))
 
             # compute gradient and do SGD step
             optimizer.zero_grad(set_to_none=True)
 
             with autocast(device_type=device, dtype=torch.float16):
-                logits = model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
+                logits, index, lam = model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
+                labels_a = labels
+                labels_b = labels[index, :]
                 # loss = criterion(logits, labels)
                 loss = mixup_criterion(criterion, logits, labels_a, labels_b, lam)
 
@@ -340,7 +342,7 @@ def main_ddp(world_size):
     model = model.to(rank)
     ddp_model = DDP(model, device_ids=[rank], output_device=rank)
     print("***********************************************************rank: ", rank)
-    train(ddp_model, criterion, alpha, ngd, rank)
+    train(ddp_model, criterion, ngd, rank)
     draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
                [training_accuracy, testing_accuracy], ["training", "testing"], "Transformer accuracy curve", "accuracy")
     draw_graph(np.arange(start=start_epoch, stop=start_epoch + args.epoch), training_time_epoch, "training time",
@@ -359,7 +361,7 @@ if __name__ == "__main__":
 
     if not args.distributed:
         model, criterion = load_model(args, num_class, vocab)
-        train(model, criterion, alpha, ngd)
+        train(model, criterion, ngd)
         draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
                    [training_accuracy, testing_accuracy], ["training", "testing"], "Transformer accuracy curve",
                    "accuracy")

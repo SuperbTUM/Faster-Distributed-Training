@@ -347,7 +347,7 @@ def data_preparation_test(testset, batch_size, workers):
     return testloader
 
 
-def mixup_data(x, y, alpha=.99):
+def mixup_data(x, y, alpha=.99, intra_only=False):
     '''Returns mixed inputs, pairs of targets, and lambda'''
     if alpha > 0:
         distri = torch.distributions.beta.Beta(alpha, alpha)
@@ -357,7 +357,16 @@ def mixup_data(x, y, alpha=.99):
 
     batch_size = x.size(0)
     index = torch.randperm(batch_size, device=device)
-    mixed_x = lam * x + (1 - lam) * x[index, :]
+    if intra_only:
+        mixed_x = []
+        for i, (y_a, y_b) in enumerate(zip(y, y[index])):
+            if y_a == y_b:
+                mixed_x.append(x[i])
+            else:
+                mixed_x.append(lam * x[i] + (1 - lam) * x[index[i]])
+        mixed_x = torch.stack(mixed_x)
+    else:
+        mixed_x = lam * x + (1 - lam) * x[index, :]
     y_a, y_b = y, y[index]
     return mixed_x, y_a, y_b, lam
 
@@ -376,14 +385,34 @@ class mixup_data_meta(nn.Module):
         super().__init__()
         self.lam = nn.Parameter(torch.rand(batch_size, 1, 1, 1, device=device)).to(rank)
         self.lam.data.clamp_(0.0, 1.0)
-        self.index = torch.randperm(batch_size, device=device).to(rank)
+        self.batch_size = batch_size
+        self.rank = rank
 
     def forward(self, x, y):
+        index = torch.randperm(self.batch_size, device=device).to(self.rank)
         self.lam = torch.sigmoid(self.lam)
-        mixed_x = self.lam * x + (1 - self.lam) * x[self.index, :]
+        mixed_x = self.lam * x + (1 - self.lam) * x[index, :]
         y_a, y_b = y, y[self.index]
         return mixed_x, y_a, y_b, self.lam
 
+
+class mixup_data_attn(nn.Module):
+    """
+    Make mixup an attention map
+    """
+    def __init__(self, batch_size, rank, width, height, channel=3):
+        super(mixup_data_attn, self).__init__()
+        self.lam = nn.Parameter(torch.rand(channel, width, height, device=device)).to(rank)
+        self.lam.data.clamp_(0.0, 1.0)
+        self.batch_size = batch_size
+        self.rank = rank
+
+    def forward(self, x, y):
+        index = torch.randperm(self.batch_size, device=device).to(self.rank)
+        self.lam = torch.sigmoid(self.lam)
+        mixed_x = self.lam * x + (1 - self.lam) * x[index, :]
+        y_a, y_b = y, y[self.index]
+        return mixed_x, y_a, y_b, self.lam
 
 # class lam_meta(torch.autograd.Function):
 #     @staticmethod
