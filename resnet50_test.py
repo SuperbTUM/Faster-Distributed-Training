@@ -390,10 +390,10 @@ class mixup_data_meta(nn.Module):
 
     def forward(self, x, y):
         index = torch.randperm(self.batch_size, device=device).to(self.rank)
-        self.lam = torch.sigmoid(self.lam)
-        mixed_x = self.lam * x + (1 - self.lam) * x[index, :]
-        y_a, y_b = y, y[self.index]
-        return mixed_x, y_a, y_b, self.lam
+        lam = torch.sigmoid(self.lam)
+        mixed_x = lam * x + (1 - lam) * x[index, :]
+        y_a, y_b = y, y[index]
+        return mixed_x, y_a, y_b, lam
 
 
 class mixup_data_attn(nn.Module):
@@ -409,10 +409,10 @@ class mixup_data_attn(nn.Module):
 
     def forward(self, x, y):
         index = torch.randperm(self.batch_size, device=device).to(self.rank)
-        self.lam = torch.sigmoid(self.lam)
-        mixed_x = self.lam * x + (1 - self.lam) * x[index, :]
-        y_a, y_b = y, y[self.index]
-        return mixed_x, y_a, y_b, self.lam
+        lam = torch.sigmoid(self.lam)
+        mixed_x = lam * x + (1 - lam) * x[index, :]
+        y_a, y_b = y, y[index]
+        return mixed_x, y_a, y_b, lam
 
 # class lam_meta(torch.autograd.Function):
 #     @staticmethod

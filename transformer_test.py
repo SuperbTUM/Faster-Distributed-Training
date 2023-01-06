@@ -26,6 +26,7 @@ warnings.filterwarnings("ignore")
 from utils import *
 from ngd_optimizer import NGD
 from torch.utils.data.distributed import DistributedSampler
+# from torchdata.datapipes.iter import IterableWrapper
 from torch.utils.data.backward_compatibility import worker_init_fn
 
 # from torch_ort import ORTModule
@@ -65,6 +66,7 @@ class AG_NEWS_DATASET:
         self.max_sen_len = 100
         train_ds = AG_NEWS(root='./data', split='train')
         self.train_ds = train_ds.to_map_datapipe(key_value_fn=transformation)
+        # self.train_ds = IterableWrapper([(i, data) for i, data in enumerate(train_ds)])
         self.test_ds = AG_NEWS(root='./data', split='test')
 
     def generate_batch(self, data_batch):
@@ -91,7 +93,7 @@ class AG_NEWS_DATASET:
                                    num_workers=num_workers,
                                    pin_memory=True,
                                    persistent_workers=True,
-                                   worker_init_fn=worker_init_fn,
+                                   # worker_init_fn=worker_init_fn,
                                    drop_last=True)
         else:
             train_dl = DataLoaderX(self.train_ds,
@@ -222,7 +224,7 @@ def train(model, criterion, ngd, rank=0):
             with autocast(device_type=device, dtype=torch.float16):
                 logits, index, lam = model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
                 labels_a = labels
-                labels_b = labels[index, :]
+                labels_b = labels[index]
                 # loss = criterion(logits, labels)
                 loss = mixup_criterion(criterion, logits, labels_a, labels_b, lam)
 
