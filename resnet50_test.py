@@ -403,17 +403,21 @@ class mixup_data_attn(nn.Module):
     """
     def __init__(self, batch_size, rank, width, height, channel=3):
         super(mixup_data_attn, self).__init__()
-        self.lam = nn.Parameter(torch.rand(channel, width, height, device=device)).to(rank)
+        self.lam = nn.Parameter(torch.rand(batch_size, channel, width, height, device=device)).to(rank)
         self.lam.data.clamp_(0.0, 1.0)
         self.batch_size = batch_size
         self.rank = rank
 
     def forward(self, x, y):
         index = torch.randperm(self.batch_size, device=device).to(self.rank)
-        lam = torch.sigmoid(self.lam)
-        mixed_x = lam * x + (1 - lam) * x[index, :]
+        lam_attn = torch.sigmoid(self.lam)
+        mixed_x = lam_attn * x + (1 - lam_attn) * x[index, :]
         y_a, y_b = y, y[index]
-        return mixed_x, y_a, y_b, lam
+        lam_scale = []
+        for lam_attn_sample in lam_attn:
+            lam_scale.append(lam_attn_sample.view(-1).T @ lam_attn_sample.view(-1))
+        lam_scale = torch.stack(lam_scale)
+        return mixed_x, y_a, y_b, lam_scale
 
 # class lam_meta(torch.autograd.Function):
 #     @staticmethod
