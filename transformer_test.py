@@ -105,6 +105,7 @@ class AG_NEWS_DATASET:
                                    persistent_workers=True,
                                    worker_init_fn=worker_init_fn,
                                    drop_last=True)
+            train_sampler = None
         test_dl = DataLoaderX(self.test_ds,
                               batch_size=self.batch_size,
                               shuffle=False,
@@ -114,7 +115,7 @@ class AG_NEWS_DATASET:
                               persistent_workers=True,
                               worker_init_fn=worker_init_fn)
 
-        return train_dl, test_dl
+        return train_dl, test_dl, train_sampler
 
 
 def get_tokenizer_size():
@@ -124,8 +125,8 @@ def get_tokenizer_size():
 
 def load_dataloader(batch_size, num_workers):
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    train_dl, test_dl = AG_NEWS_DATASET(tokenizer, batch_size=batch_size).load_data(args.distributed, num_workers)
-    return train_dl, test_dl
+    train_dl, test_dl, train_sampler = AG_NEWS_DATASET(tokenizer, batch_size=batch_size).load_data(args.distributed, num_workers)
+    return train_dl, test_dl, train_sampler
 
 
 def load_best_performance(args, num_class):
@@ -183,7 +184,7 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
 
 def train(model, criterion, ngd, rank=0):
     ##
-    train_dl, test_dl = load_dataloader(args.batch_size, args.workers)
+    train_dl, test_dl, train_sampler = load_dataloader(args.batch_size, args.workers)
 
     model.train()
     peak_memory_allocated = 0
@@ -199,6 +200,8 @@ def train(model, criterion, ngd, rank=0):
     scheduler = MultiStepLR(optimizer, milestones=[10, 15], gamma=0.1)
 
     for epoch in range(start_epoch, epochs_total):
+        if train_sampler:
+            train_sampler.set_epoch(epoch)
         correct = torch.zeros(1).to(rank)
         total = torch.zeros(1).to(rank)
         batch_idx = 0

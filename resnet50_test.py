@@ -332,7 +332,8 @@ def data_preparation(trainset, batch_size, workers):
         trainloader = DataLoaderX(
             trainset, batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True,
             persistent_workers=True, drop_last=True)
-    return trainloader
+        train_sampler = None
+    return trainloader, train_sampler
 
 
 def data_preparation_test(testset, batch_size, workers):
@@ -495,9 +496,11 @@ def average_gradients(model):
 # Training
 def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
     optimizer, scheduler = get_optimizer(net)
-    trainloader = data_preparation(trainset, args.bs, args.workers)
+    trainloader, train_sampler = data_preparation(trainset, args.bs, args.workers)
     # testloader = data_preparation_test(testset, args.bs, args.workers)
     for epoch in range(start_epoch, start_epoch + args.epoch):
+        if train_sampler:
+            train_sampler.set_epoch(epoch)
         net.train()
         train_loss = torch.zeros(1).to(rank)
         correct = torch.zeros(1).to(rank)
