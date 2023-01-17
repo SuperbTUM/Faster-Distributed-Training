@@ -23,6 +23,13 @@ def setup_norank(world_size):
     dist.init_process_group("nccl")
 
 
+def setup_sharedfile(world_size):
+    dist.init_process_group("nccl",
+                            init_method='file:///mnt/nfs/sharedfile',
+                            world_size=world_size,
+                            group_name='hpmlGroup')
+
+
 def cleanup():
     dist.destroy_process_group()
 
