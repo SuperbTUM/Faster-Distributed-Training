@@ -35,6 +35,14 @@ from torch_ort import ORTModule
 model = ORTModule(model)
 """
 
+from torch.distributed.fsdp import (
+    FullyShardedDataParallel,
+    CPUOffload,
+)
+from torch.distributed.fsdp.wrap import (
+    default_auto_wrap_policy,
+)
+
 training_accuracy = []
 testing_accuracy = []
 
@@ -345,7 +353,12 @@ def main_ddp(world_size):
     rank = dist.get_rank()
     model, criterion = load_model(args, num_class, vocab)
     model = model.to(rank)
-    ddp_model = DDP(model, device_ids=[rank], output_device=rank)
+    # ddp_model = DDP(model, device_ids=[rank], output_device=rank)
+    ddp_model = FullyShardedDataParallel(
+        model,
+        fsdp_auto_wrap_policy=default_auto_wrap_policy,
+        cpu_offload=CPUOffload(offload_params=True),
+    )
     print("***********************************************************rank: ", rank)
     train(ddp_model, criterion, ngd, rank)
     draw_graph([np.arange(start=start_epoch, stop=start_epoch + args.epoch) for _ in range(2)],
