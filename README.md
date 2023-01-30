@@ -2,6 +2,8 @@
 
 The motivation of this project is to reduce GPU hours and memory cost on large models and data batch. We aim to propose a faster and more robust distributed training approach with consideration of two major factors: speed and accuracy. For accuracy, we applied natural gradient descent, mixup and its variant; for speed, we deployed Apex/ORT training, along with a series of training acceleration tricks including non-blocking data loading, module fusion and distributed training with omp and torchrun. We evaluate our proposal with two major deep learning architectures, CNN and transformer, with the tasks being classification tasks.
 
+FSDP training for large model is under experiment, feel free to switch back to DDP if necessary.
+
 
 
 ## Code Structure

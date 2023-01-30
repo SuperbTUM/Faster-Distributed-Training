@@ -220,10 +220,12 @@ def train(model, criterion, ngd, rank=0):
             labels = labels.to(device, non_blocking=True) - 1
             tokens = tokens.to(device, non_blocking=True)
             masks = masks.to(device, non_blocking=True)
+            index = torch.arange(start=0, end=512, device=device)
             if args.distributed:
                 labels = labels.to(rank)
                 tokens = tokens.to(rank)
                 masks = masks.to(rank)
+                index = index.to(rank)
 
             # tokens, labels_a, labels_b, lam = mixup_data(tokens, labels,
             #                                              alpha)
@@ -233,7 +235,7 @@ def train(model, criterion, ngd, rank=0):
             optimizer.zero_grad(set_to_none=True)
 
             with autocast(device_type=device, dtype=torch.float16):
-                logits, index, lam = model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
+                logits, index, lam = model(tokens, index, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
                 labels_a = labels
                 labels_b = labels[index]
                 # loss = criterion(logits, labels)
@@ -352,12 +354,13 @@ def main_ddp(world_size):
     setup_norank(world_size)
     rank = dist.get_rank()
     model, criterion = load_model(args, num_class, vocab)
+    torch.cuda.set_device(rank)
     model = model.to(rank)
     # ddp_model = DDP(model, device_ids=[rank], output_device=rank)
     ddp_model = FullyShardedDataParallel(
         model,
         fsdp_auto_wrap_policy=default_auto_wrap_policy,
-        cpu_offload=CPUOffload(offload_params=True),
+        # cpu_offload=CPUOffload(offload_params=True),
     )
     print("***********************************************************rank: ", rank)
     train(ddp_model, criterion, ngd, rank)

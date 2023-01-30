@@ -56,8 +56,8 @@ class Transformer(nn.Module):
 
         self.init_params()
 
-    def forward(self, x, mask=None):
-        embeddings = self.input_embeddings(x)
+    def forward(self, x, index, mask=None):
+        embeddings = self.input_embeddings(x, index)
         encodings = self.input_encodings(embeddings)
         x = embeddings + encodings
         for i in range(self.n_layers):
@@ -104,13 +104,14 @@ class PositionalEncoding(nn.Module):
         scale = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model)).to(device)
         pe[:, 0::2] = torch.sin(position * scale)
         pe[:, 1::2] = torch.cos(position * scale)
-        pe = pe.unsqueeze(0)
+        self.pe = pe.unsqueeze(0)
         # self.register_buffer("pe", pe)
-        self.pe = nn.Parameter(pe, requires_grad=False)
+        # self.pe = nn.Parameter(pe, requires_grad=False)
         # self.register_parameter("pe", pe)
 
     def forward(self, x):
-        x = x + Variable(self.pe[:, :x.size(1)], requires_grad=False)
+        gpu_index = x.device
+        x = x + self.pe[:, :x.size(1)].to(gpu_index)
         return self.dropout(x)
 
 
@@ -129,10 +130,11 @@ class Embeddings(nn.Module):
         self.pos_embedding = nn.Embedding(maxlen, d_model)
         self.d_model = d_model
         self.maxlen = maxlen
-        self.pos_embedding_idx = nn.Parameter(torch.arange(start=0, end=self.maxlen, device=device), requires_grad=False)
+        # self.pos_embedding_idx = nn.Parameter(torch.arange(start=0, end=self.maxlen, device=device), requires_grad=False)
 
-    def forward(self, x):
-        positions = self.pos_embedding(self.pos_embedding_idx)[:x.size(1), :]
+    def forward(self, x, index):
+        # torch.arange(start=0, end=self.maxlen, device=device)
+        positions = self.pos_embedding(index)[:x.size(1), :]
         with autocast(device_type=device, enabled=False):
             tokens = self.token_embedding(x.long())
         return (positions + tokens) * math.sqrt(self.d_model)
