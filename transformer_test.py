@@ -43,6 +43,9 @@ from torch.distributed.fsdp.wrap import (
     default_auto_wrap_policy,
 )
 
+import re
+from typing import Sequence
+
 training_accuracy = []
 testing_accuracy = []
 
@@ -62,8 +65,13 @@ class DataLoaderX(DataLoader):
         return BackgroundGenerator(super().__iter__())
 
 
-def pad_sequence(sequences, batch_first=False, max_len=None, padding_value=0):
-    max_size = sequences[0].size()
+def striphtml(data):
+    p = re.compile(r'<.*?>')
+    return p.sub('', data)
+
+
+def remove_url(data):
+    return re.sub(r'\s*(?:https?://)?www\.\S*\.[A-Za-z]{2,5}\s*', ' ', data).strip()
 
 
 class AG_NEWS_DATASET:
@@ -79,7 +87,12 @@ class AG_NEWS_DATASET:
 
     def generate_batch(self, data_batch):
         batch_sentence, batch_label = [], []
-        for (lab, sen) in data_batch:
+        for (index, sen) in data_batch:
+            if isinstance(sen, Sequence):
+                lab, sen = sen
+            else:
+                lab, sen = index, sen
+            sen = remove_url(striphtml(sen)) # data cleaning
             batch_sentence.append(sen)
             batch_label.append(lab)
 
