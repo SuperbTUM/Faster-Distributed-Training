@@ -45,6 +45,7 @@ from torch.distributed.fsdp.wrap import (
 
 import re
 from typing import Sequence
+from gensim.parsing.preprocessing import remove_stopwords
 
 training_accuracy = []
 testing_accuracy = []
@@ -88,11 +89,11 @@ class AG_NEWS_DATASET:
     def generate_batch(self, data_batch):
         batch_sentence, batch_label = [], []
         for (index, sen) in data_batch:
-            if isinstance(sen, Sequence):
+            if isinstance(sen, (list, tuple)):
                 lab, sen = sen
             else:
                 lab, sen = index, sen
-            sen = remove_url(striphtml(sen)) # data cleaning
+            sen = remove_stopwords(remove_url(striphtml(sen))) # data cleaning
             batch_sentence.append(sen)
             batch_label.append(lab)
 
