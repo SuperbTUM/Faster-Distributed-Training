@@ -162,13 +162,15 @@ class BasicBlock(nn.Module):
             self.residual_function = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False),
                 nn.BatchNorm2d(out_channels),
-                nn.ReLU(inplace=True),
+                # nn.ReLU(inplace=True),
+                nn.CELU(alpha=0.075, inplace=True),
                 FusedConvBN(out_channels, out_channels * BasicBlock.expansion, kernel_size=3, padding=1)
             )
         else:
             self.residual_function = nn.Sequential(
                 FusedConvBN(in_channels, out_channels, kernel_size=3, padding=1),
-                nn.ReLU(inplace=True),
+                # nn.ReLU(inplace=True),
+                nn.CELU(alpha=0.075, inplace=True),
                 FusedConvBN(out_channels, out_channels * BasicBlock.expansion, kernel_size=3, padding=1)
             )
 
@@ -184,7 +186,8 @@ class BasicBlock(nn.Module):
             )
 
     def forward(self, x):
-        return nn.ReLU(inplace=True)(self.residual_function(x) + self.shortcut(x))
+        # return nn.ReLU(inplace=True)(self.residual_function(x) + self.shortcut(x))
+        return nn.CELU(alpha=0.075, inplace=True)(self.residual_function(x) + self.shortcut(x))
 
 
 class BottleNeck(nn.Module):
@@ -233,7 +236,8 @@ class ResNet(nn.Module):
 
         self.conv1 = nn.Sequential(
             FusedConvBN(3, 64, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True))
+            # nn.ReLU(inplace=True))
+            nn.CELU(alpha=0.075, inplace=True))
         # we use a different inputsize than the original paper
         # so conv2_x's stride is 1
         self.conv2_x = self._make_layer(block, 64, num_block[0], 1)
