@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.optim import SGD
-from torch.optim.lr_scheduler import MultiStepLR
+from torch.optim.lr_scheduler import MultiStepLR, OneCycleLR
 from torchtext.datasets import AG_NEWS
 from torch.utils.data import DataLoader
 from torch.backends import cudnn
@@ -203,6 +203,16 @@ def mixup_data(x, y, alpha=.99):
 def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
+def one_cycle_strategy(model, optimizer_name, epoch, peak_epoch, start_lr, start_momentum):
+    if epoch > peak_epoch:
+        lr = (9 * start_lr) / peak_epoch * (peak_epoch - epoch) + start_lr
+        momentum = 0.1 / peak_epoch * (epoch - peak_epoch) + start_momentum
+    else:
+        lr = 10 * start_lr - (epoch - peak_epoch) * (9 * start_lr) / peak_epoch
+        momentum = start_momentum - 0.1 + 0.1 / peak_epoch * (epoch - peak_epoch)
+    optimizer = globals()[optimizer_name](model.parameters(), lr=lr, weight_decay=0., momentum=momentum)
+    return optimizer
+
 
 def train(model, criterion, ngd, rank=0):
     ##
@@ -216,10 +226,13 @@ def train(model, criterion, ngd, rank=0):
     else:
         lr = args.lr
     if ngd:
-        optimizer = NGD(model.parameters(), lr=lr, weight_decay=0., momentum=0.)
+        optimizer = NGD(model.parameters(), lr=lr, weight_decay=0., momentum=0.9)
     else:
-        optimizer = SGD(model.parameters(), lr=lr, weight_decay=0., momentum=0.)
-    scheduler = MultiStepLR(optimizer, milestones=[10, 15], gamma=0.1)
+        optimizer = SGD(model.parameters(), lr=lr, weight_decay=0., momentum=0.9)
+    # scheduler = MultiStepLR(optimizer, milestones=[10, 15], gamma=0.1)
+    scheduler = OneCycleLR(optimizer, max_lr=lr * 5, epochs=epochs_total - start_epoch,
+                           steps_per_epoch=len(train_dl)//args.batch_size,
+                           cycle_momentum=True)
 
     for epoch in range(start_epoch, epochs_total):
         if train_sampler:
