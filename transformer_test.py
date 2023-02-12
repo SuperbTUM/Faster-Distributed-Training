@@ -231,7 +231,7 @@ def train(model, criterion, ngd, rank=0):
         optimizer = SGD(model.parameters(), lr=lr, weight_decay=0., momentum=0.9)
     # scheduler = MultiStepLR(optimizer, milestones=[10, 15], gamma=0.1)
     scheduler = OneCycleLR(optimizer, max_lr=lr * 5, epochs=epochs_total - start_epoch,
-                           steps_per_epoch=len(train_dl)//args.batch_size,
+                           steps_per_epoch=len(train_dl),
                            cycle_momentum=True)
 
     for epoch in range(start_epoch, epochs_total):
