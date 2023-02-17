@@ -58,8 +58,8 @@ class Transformer(nn.Module):
 
         self.init_params()
 
-    def forward(self, x, index, mask=None):
-        embeddings = self.input_embeddings(x, index)
+    def forward(self, x, token_types, index, mask=None):
+        embeddings = self.input_embeddings(x, token_types, index)
         encodings = self.input_encodings(embeddings)
         x = embeddings + encodings
         for i in range(self.n_layers):
@@ -142,16 +142,18 @@ class Embeddings(nn.Module):
         super(Embeddings, self).__init__()
         self.token_embedding = nn.Embedding(vocab, d_model)
         self.pos_embedding = nn.Embedding(maxlen, d_model)
+        self.segment_embedding = nn.Embedding(3, d_model)
         self.d_model = d_model
         self.maxlen = maxlen
         # self.pos_embedding_idx = nn.Parameter(torch.arange(start=0, end=self.maxlen, device=device), requires_grad=False)
 
-    def forward(self, x, index):
+    def forward(self, x, token_types, index):
         # torch.arange(start=0, end=self.maxlen, device=device)
         positions = self.pos_embedding(index)[:x.size(1), :]
+        segments = self.segment_embedding(token_types)[:x.size(1), :]
         with autocast(device_type=device, enabled=False):
             tokens = self.token_embedding(x.long())
-        return (positions + tokens) * math.sqrt(self.d_model)
+        return (positions + tokens + segments) * math.sqrt(self.d_model)
 
 
 class PositionalWiseFFN(nn.Module):

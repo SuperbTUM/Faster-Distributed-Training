@@ -101,9 +101,10 @@ class AG_NEWS_DATASET:
 
         batch_sentence = tmp['input_ids']
         batch_label = torch.tensor(batch_label, dtype=torch.long)
+        batch_token_ids = tmp["token_type_ids"]
         attn_mask = tmp['attention_mask']
 
-        return batch_sentence, batch_label, attn_mask
+        return batch_sentence, batch_label, batch_token_ids, attn_mask
 
     def load_data(self, distributed=False, num_workers=2):
         if distributed:
@@ -233,6 +234,10 @@ def train(model, criterion, ngd, rank=0):
     scheduler = OneCycleLR(optimizer, max_lr=lr * 5, epochs=epochs_total - start_epoch,
                            steps_per_epoch=len(train_dl),
                            cycle_momentum=True)
+    
+    index = torch.arange(start=0, end=512, device=device)
+    if args.distributed:
+        index = index.to(rank)
 
     for epoch in range(start_epoch, epochs_total):
         if train_sampler:
@@ -243,16 +248,16 @@ def train(model, criterion, ngd, rank=0):
         iterator = tqdm(train_dl)
 
         start = time.monotonic()
-        for tokens, labels, masks in iterator:
+        for tokens, labels, token_types, masks in iterator:
             labels = labels.to(device, non_blocking=True) - 1
             tokens = tokens.to(device, non_blocking=True)
+            token_types = token_types.to(device, non_blocking=True)
             masks = masks.to(device, non_blocking=True)
-            index = torch.arange(start=0, end=512, device=device)
             if args.distributed:
                 labels = labels.to(rank)
                 tokens = tokens.to(rank)
+                token_types = token_types.to(rank)
                 masks = masks.to(rank)
-                index = index.to(rank)
 
             # tokens, labels_a, labels_b, lam = mixup_data(tokens, labels,
             #                                              alpha)
@@ -262,7 +267,7 @@ def train(model, criterion, ngd, rank=0):
             optimizer.zero_grad(set_to_none=True)
 
             with autocast(device_type=device, dtype=torch.float16):
-                logits, index, lam = model(tokens, index, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
+                logits, index, lam = model(tokens, token_types, index, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
                 labels_a = labels
                 labels_b = labels[index]
                 # loss = criterion(logits, labels)
@@ -309,16 +314,21 @@ def test(epoch, dataloader, model, rank=0):
     correct = 0
     total = 0
     batch_idx = 0
+    index = torch.arange(start=0, end=512, device=device)
+    if args.distributed:
+        index = index.to(rank)
     with torch.no_grad():
-        for tokens, labels, masks in iterator:
+        for tokens, labels, token_types, masks in iterator:
             labels = labels.to(device) - 1
             tokens = tokens.to(device)
+            token_types = token_types.to(device)
             masks = masks.to(device)
             if args.distributed:
                 labels = labels.to(rank)
                 tokens = tokens.to(rank)
+                token_types = token_types.to(rank)
                 masks = masks.to(rank)
-            logits = model(tokens, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
+            logits = model(tokens, token_types, index, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
             _, predicted = logits.max(1)
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()
