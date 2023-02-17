@@ -50,6 +50,8 @@ class Transformer(nn.Module):
                 h, d_model, dropout_attention, dropout_connection_attention))
             self.sublayer_ffn.append(sublayerConnectionFFN(
                 d_model, d_ff, dropout_ffn, dropout_connection_ffn))
+        self.pooler = Pooler(d_model)
+        self.dropout_post = nn.Dropout(0.1)
         self.classifier = Classifier(d_model, d_hidden, n_class)
         self.n_layers = n_layers
         self.alpha = alpha
@@ -64,6 +66,8 @@ class Transformer(nn.Module):
             x = self.sublayer_attention[i](x, mask)
             x = self.sublayer_ffn[i](x)
             # x = self.layernorm(x)
+        x = self.pooler(x)
+        x = self.dropout_post(x)
         # possible mixup on sentence embeddings
         if self.alpha > 0:
             distri = torch.distributions.beta.Beta(self.alpha, self.alpha)
@@ -73,9 +77,9 @@ class Transformer(nn.Module):
 
         batch_size = x.size(0)
         index = torch.randperm(batch_size, device=device)
-        mixed_x = lam * x + (1 - lam) * x[index, :]
+        cls_repre = lam * x + (1 - lam) * x[index, :]
 
-        cls_repre = mixed_x[:, 0, :]
+        # cls_repre = mixed_x#[:, 0, :]
         outputs = self.classifier(cls_repre)
         return outputs, index, lam
 
@@ -85,6 +89,16 @@ class Transformer(nn.Module):
             for name, p in self.named_parameters():
                 if p.dim() > 1:
                     nn.init.xavier_uniform_(p)
+
+
+class Pooler(nn.Module):
+    def __init__(self, hidden_size):
+        super(Pooler, self).__init__()
+        self.dense = nn.Linear(hidden_size, hidden_size)
+
+    def forward(self, x):
+        first_token_tensor = x[:, 0, :]
+        return F.tanh(self.dense(first_token_tensor))
 
 
 class PositionalEncoding(nn.Module):
@@ -157,7 +171,7 @@ class PositionalWiseFFN(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        return self.w_2(self.dropout(F.relu(self.w_1(x))))
+        return self.w_2(self.dropout(F.gelu(self.w_1(x))))
         # return self.fusedmlp(x)
 
 
