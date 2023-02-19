@@ -299,11 +299,11 @@ def get_classes():
 def get_dataset():
     # Data
     print('==> Preparing data..')
-    transform_train = nn.Sequential(
-        transforms.RandomCrop(32, padding=[4,4]),
+    transform_train = nn.Sequential(*np.random.choice(
+        (transforms.RandomCrop(32, padding=[4,4]),
         transforms.RandomHorizontalFlip(),
         # transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))), 3, replace=False)
     )
     transform_train = torch.jit.script(transform_train)
     trainset = CIFAR10(root='./data', train=True, download=True, transform=transform_train)
