@@ -334,8 +334,8 @@ def data_preparation(trainset, batch_size, workers):
         trainloader = DataLoaderX(
             trainset, batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True,
             persistent_workers=True, drop_last=True)
-        train_sampler = None
-    return trainloader, train_sampler
+        # train_sampler = None
+    return trainloader
 
 
 def data_preparation_test(testset, batch_size, workers):
@@ -386,13 +386,13 @@ def mixup_data(x, y, alpha=.99, intra_only=False):
 class mixup_data_meta(nn.Module):
     def __init__(self, batch_size, rank):
         super().__init__()
-        self.lam = nn.Parameter(torch.rand(batch_size, 1, 1, 1, device=device)).to(rank)
+        self.lam = nn.Parameter(torch.rand(batch_size, 1, 1, 1, device=device))#.to(rank)
         self.lam.data.clamp_(0.0, 1.0)
         self.batch_size = batch_size
         self.rank = rank
 
     def forward(self, x, y):
-        index = torch.randperm(self.batch_size, device=device).to(self.rank)
+        index = torch.randperm(self.batch_size, device=device)#.to(self.rank)
         lam = torch.sigmoid(self.lam)
         mixed_x = lam * x + (1 - lam) * x[index, :]
         y_a, y_b = y, y[index]
@@ -502,15 +502,13 @@ def average_gradients(model):
 # Training
 def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
     optimizer, scheduler = get_optimizer(net)
-    trainloader, train_sampler = data_preparation(trainset, args.bs, args.workers)
+    trainloader = data_preparation(trainset, args.bs, args.workers)
     # testloader = data_preparation_test(testset, args.bs, args.workers)
     for epoch in range(start_epoch, start_epoch + args.epoch):
-        if train_sampler:
-            train_sampler.set_epoch(epoch)
         net.train()
-        train_loss = torch.zeros(1).to(rank)
-        correct = torch.zeros(1).to(rank)
-        total = torch.zeros(1).to(rank)
+        train_loss = torch.zeros(1)#.to(rank)
+        correct = torch.zeros(1)#.to(rank)
+        total = torch.zeros(1)#.to(rank)
         batch_idx = 0
         peak_memory_allocated = 0
         iterator = tqdm(trainloader)
@@ -519,8 +517,6 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
         if use_torch_extension:
             for inputs, targets in iterator:
                 inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
-                if distributed:
-                    inputs, targets = inputs.to(rank, non_blocking=True), targets.to(rank, non_blocking=True)
                 if meta_learning:
                     # inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets, rank)
                     inputs, targets_a, targets_b, lam = mixup_data_meta(args.bs, rank)(inputs, targets)
@@ -572,8 +568,6 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
             net = nn.DataParallel(net)
             for inputs, targets in iterator:
                 inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
-                if distributed:
-                    inputs, targets = inputs.to(rank), targets.to(rank)
                 if meta_learning:
                     # inputs, targets_a, targets_b, lam = mixup_data_meta(inputs, targets, rank)
                     inputs, targets_a, targets_b, lam = mixup_data_meta(args.bs, rank)(inputs, targets)
@@ -643,8 +637,8 @@ def test(epoch, testloader, criterion, net, rank=0):
         iterator = tqdm(testloader)
         for inputs, targets in iterator:
             inputs, targets = inputs.to(device), targets.to(device)
-            if distributed:
-                inputs, targets = inputs.to(rank), targets.to(rank)
+            # if distributed:
+            #     inputs, targets = inputs.to(rank), targets.to(rank)
             outputs = net(inputs)
             loss = criterion(outputs, targets)
 
@@ -714,8 +708,8 @@ def main_ddp(world_size):
     global testing_acc
     setup_norank(world_size)
     rank = dist.get_rank()
+    torch.cuda.set_device(rank)
     model, criterion = get_model(args, classes)
-    model = model.to(rank)
     ddp_model = DDP(model, device_ids=[rank], output_device=rank)
     train(trainset, testloader, ddp_model, criterion, args.alpha, args.meta_learning, rank)
     testing_acc = np.asarray(testing_acc)
