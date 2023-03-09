@@ -29,6 +29,8 @@ from torch.utils.data.distributed import DistributedSampler
 # from torchdata.datapipes.iter import IterableWrapper
 from torch.utils.data.backward_compatibility import worker_init_fn
 
+import madgrad
+
 # from torch_ort import ORTModule
 """
 from torch_ort import ORTModule
@@ -204,16 +206,6 @@ def mixup_data(x, y, alpha=.99):
 def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
-def one_cycle_strategy(model, optimizer_name, epoch, peak_epoch, start_lr, start_momentum):
-    if epoch > peak_epoch:
-        lr = (9 * start_lr) / peak_epoch * (peak_epoch - epoch) + start_lr
-        momentum = 0.1 / peak_epoch * (epoch - peak_epoch) + start_momentum
-    else:
-        lr = 10 * start_lr - (epoch - peak_epoch) * (9 * start_lr) / peak_epoch
-        momentum = start_momentum - 0.1 + 0.1 / peak_epoch * (epoch - peak_epoch)
-    optimizer = globals()[optimizer_name](model.parameters(), lr=lr, weight_decay=0., momentum=momentum)
-    return optimizer
-
 
 def train(model, criterion, ngd, rank=0):
     ##
@@ -229,21 +221,22 @@ def train(model, criterion, ngd, rank=0):
     if ngd:
         optimizer = NGD(model.parameters(), lr=lr, weight_decay=0., momentum=0.9)
     else:
-        optimizer = SGD(model.parameters(), lr=lr, weight_decay=0., momentum=0.9)
+        # optimizer = SGD(model.parameters(), lr=lr, weight_decay=0., momentum=0.9)
+        optimizer = madgrad.MirrorMADGRAD(model.parameters(), lr=lr, weight_decay=0., momentum=0.9)
     # scheduler = MultiStepLR(optimizer, milestones=[10, 15], gamma=0.1)
     scheduler = OneCycleLR(optimizer, max_lr=lr * 5, epochs=epochs_total - start_epoch,
                            steps_per_epoch=len(train_dl),
                            cycle_momentum=True)
     
-    index = torch.arange(start=0, end=512, device=device)
-    if args.distributed:
-        index = index.to(rank)
+    pos_index = torch.arange(start=0, end=512, device=device)
+    # if args.distributed:
+    #     pos_index = pos_index.to(rank)
 
     for epoch in range(start_epoch, epochs_total):
         if train_sampler:
             train_sampler.set_epoch(epoch)
-        correct = torch.zeros(1).to(rank)
-        total = torch.zeros(1).to(rank)
+        correct = torch.zeros(1, device=device)#.to(rank)
+        total = torch.zeros(1, device=device)#.to(rank)
         batch_idx = 0
         iterator = tqdm(train_dl)
 
@@ -253,11 +246,11 @@ def train(model, criterion, ngd, rank=0):
             tokens = tokens.to(device, non_blocking=True)
             token_types = token_types.to(device, non_blocking=True)
             masks = masks.to(device, non_blocking=True)
-            if args.distributed:
-                labels = labels.to(rank)
-                tokens = tokens.to(rank)
-                token_types = token_types.to(rank)
-                masks = masks.to(rank)
+            # if args.distributed:
+            #     labels = labels.to(rank)
+            #     tokens = tokens.to(rank)
+            #     token_types = token_types.to(rank)
+            #     masks = masks.to(rank)
 
             # tokens, labels_a, labels_b, lam = mixup_data(tokens, labels,
             #                                              alpha)
@@ -267,7 +260,7 @@ def train(model, criterion, ngd, rank=0):
             optimizer.zero_grad(set_to_none=True)
 
             with autocast(device_type=device, dtype=torch.float16):
-                logits, index, lam = model(tokens, token_types, index, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
+                logits, index, lam = model(tokens, token_types, pos_index, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
                 labels_a = labels
                 labels_b = labels[index]
                 # loss = criterion(logits, labels)

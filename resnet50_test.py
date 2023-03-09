@@ -29,6 +29,8 @@ except:
     from apex import amp
     use_torch_extension = False
 
+import madgrad
+
 from utils import *
 from ngd_optimizer import NGD
 from torchvision_utils import download_and_extract_archive, check_integrity
@@ -483,11 +485,12 @@ def get_optimizer(net):
         lr = args.lr
     if args.ngd:
         optimizer = NGD(net.parameters(), lr=lr,
-                        momentum=0.9, weight_decay=5e-4)
+                        momentum=0.9, weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [10, 20], gamma=0.2)
     else:
-        optimizer = optim.SGD(net.parameters(), lr=lr,
-                              momentum=0.9, weight_decay=5e-4)
+        # optimizer = optim.SGD(net.parameters(), lr=lr,
+        #                       momentum=0.9, weight_decay=5e-4)
+        optimizer = madgrad.MADGRAD(net.parameters(), lr=lr, momentum=0.9, weight_decay=5e-6)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
     return optimizer, scheduler
 
@@ -506,9 +509,9 @@ def train(trainset, testloader, net, criterion, alpha, meta_learning, rank=0):
     # testloader = data_preparation_test(testset, args.bs, args.workers)
     for epoch in range(start_epoch, start_epoch + args.epoch):
         net.train()
-        train_loss = torch.zeros(1)#.to(rank)
-        correct = torch.zeros(1)#.to(rank)
-        total = torch.zeros(1)#.to(rank)
+        train_loss = torch.zeros(1, device=device)#.to(rank)
+        correct = torch.zeros(1, device=device)#.to(rank)
+        total = torch.zeros(1, device=device)#.to(rank)
         batch_idx = 0
         peak_memory_allocated = 0
         iterator = tqdm(trainloader)

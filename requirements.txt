@@ -7,3 +7,4 @@ prefetch_generator
 dill
 transformers
 gensim
+madgrad

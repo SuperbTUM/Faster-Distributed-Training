@@ -149,8 +149,8 @@ class Embeddings(nn.Module):
 
     def forward(self, x, token_types, index):
         # torch.arange(start=0, end=self.maxlen, device=device)
-        positions = self.pos_embedding(index)[:x.size(1), :]
-        segments = self.segment_embedding(token_types)[:x.size(1), :]
+        positions = self.pos_embedding(index)[:x.size(1), :].repeat(x.size(0), 1, 1)
+        segments = self.segment_embedding(token_types)[:, :x.size(1), :]
         with autocast(device_type=device, enabled=False):
             tokens = self.token_embedding(x.long())
         return (positions + tokens + segments) * math.sqrt(self.d_model)
