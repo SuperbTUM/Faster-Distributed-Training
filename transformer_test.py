@@ -383,9 +383,8 @@ def main_ddp(world_size):
     # setup(rank, world_size)
     setup_norank(world_size)
     rank = dist.get_rank()
-    model, criterion = load_model(args, num_class, vocab)
     torch.cuda.set_device(rank)
-    model = model.to(rank)
+    model, criterion = load_model(args, num_class, vocab)
     # ddp_model = DDP(model, device_ids=[rank], output_device=rank)
     ddp_model = FullyShardedDataParallel(
         model,
