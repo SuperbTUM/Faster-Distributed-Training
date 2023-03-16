@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.optim import SGD
+# from torch.distributed.optim import ZeroRedundancyOptimizer
 from torch.optim.lr_scheduler import MultiStepLR, OneCycleLR
 from torchtext.datasets import AG_NEWS
 from torch.utils.data import DataLoader
@@ -42,7 +43,7 @@ from torch.distributed.fsdp import (
     CPUOffload,
 )
 from torch.distributed.fsdp.wrap import (
-    default_auto_wrap_policy,
+    size_based_auto_wrap_policy,
 )
 
 import re
@@ -223,6 +224,8 @@ def train(model, criterion, ngd, rank=0):
     else:
         # optimizer = SGD(model.parameters(), lr=lr, weight_decay=0., momentum=0.9)
         optimizer = madgrad.MirrorMADGRAD(model.parameters(), lr=lr, weight_decay=0., momentum=0.9)
+        # if args.distributed:
+        #     optimizer = ZeroRedundancyOptimizer(params=model.parameters(), optimizer_class=madgrad.MirrorMADGRAD, lr=lr, weight_decay=0., momentum=0.9)
     # scheduler = MultiStepLR(optimizer, milestones=[10, 15], gamma=0.1)
     scheduler = OneCycleLR(optimizer, max_lr=lr * 5, epochs=epochs_total - start_epoch,
                            steps_per_epoch=len(train_dl),
@@ -308,19 +311,19 @@ def test(epoch, dataloader, model, rank=0):
     total = 0
     batch_idx = 0
     index = torch.arange(start=0, end=512, device=device)
-    if args.distributed:
-        index = index.to(rank)
+    # if args.distributed:
+    #     index = index.to(rank)
     with torch.no_grad():
         for tokens, labels, token_types, masks in iterator:
             labels = labels.to(device) - 1
             tokens = tokens.to(device)
             token_types = token_types.to(device)
             masks = masks.to(device)
-            if args.distributed:
-                labels = labels.to(rank)
-                tokens = tokens.to(rank)
-                token_types = token_types.to(rank)
-                masks = masks.to(rank)
+            # if args.distributed:
+            #     labels = labels.to(rank)
+            #     tokens = tokens.to(rank)
+            #     token_types = token_types.to(rank)
+            #     masks = masks.to(rank)
             logits = model(tokens, token_types, index, masks.view(masks.shape[0], 1, 1, masks.shape[1]))
             _, predicted = logits.max(1)
             total += labels.size(0)
@@ -385,10 +388,12 @@ def main_ddp(world_size):
     rank = dist.get_rank()
     torch.cuda.set_device(rank)
     model, criterion = load_model(args, num_class, vocab)
+
     # ddp_model = DDP(model, device_ids=[rank], output_device=rank)
     ddp_model = FullyShardedDataParallel(
         model,
-        fsdp_auto_wrap_policy=default_auto_wrap_policy,
+        auto_wrap_policy=size_based_auto_wrap_policy,
+        device_id=torch.cuda.current_device(),
         # cpu_offload=CPUOffload(offload_params=True),
     )
     print("***********************************************************rank: ", rank)
