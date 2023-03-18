@@ -9,6 +9,7 @@ from torch.backends import cudnn
 from torch.autograd import Variable
 from torch import autocast
 from torch.cuda.amp import GradScaler
+from fairscale.optim.grad_scaler import ShardedGradScaler
 
 from transformers import AutoTokenizer
 from transformer import Transformer
@@ -90,15 +91,8 @@ class AG_NEWS_DATASET:
         self.test_ds = AG_NEWS(root='./data', split='test')
 
     def generate_batch(self, data_batch):
-        batch_sentence, batch_label = [], []
-        for (index, sen) in data_batch:
-            if isinstance(sen, (list, tuple)):
-                lab, sen = sen
-            else:
-                lab, sen = index, sen
-            sen = remove_stopwords(remove_url(striphtml(sen))) # data cleaning
-            batch_sentence.append(sen)
-            batch_label.append(lab)
+        batch_label, batch_sentence_raw = zip(*data_batch)
+        batch_sentence = [remove_stopwords(remove_url(striphtml(x))) for x in batch_sentence_raw]
 
         tmp = self.tokenizer(batch_sentence, padding='longest', return_tensors='pt')
 
@@ -371,7 +365,7 @@ args = parse()
 num_class = 4
 vocab = get_tokenizer_size()
 best_acc, start_epoch = load_best_performance(args, num_class)
-scaler = GradScaler()
+scaler = ShardedGradScaler()#GradScaler()
 
 epochs_total = args.epoch
 alpha = args.alpha
@@ -394,7 +388,7 @@ def main_ddp(world_size):
         model,
         auto_wrap_policy=size_based_auto_wrap_policy,
         device_id=torch.cuda.current_device(),
-        # cpu_offload=CPUOffload(offload_params=True),
+        cpu_offload=CPUOffload(offload_params=True),
     )
     print("***********************************************************rank: ", rank)
     train(ddp_model, criterion, ngd, rank)
