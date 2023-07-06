@@ -161,17 +161,24 @@ class BasicBlock(nn.Module):
         if stride != 1:
             self.residual_function = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False),
-                nn.BatchNorm2d(out_channels),
+                # nn.BatchNorm2d(out_channels),
+                nn.SyncBatchNorm(out_channels),
                 # nn.ReLU(inplace=True),
                 nn.CELU(alpha=0.075, inplace=True),
-                FusedConvBN(out_channels, out_channels * BasicBlock.expansion, kernel_size=3, padding=1)
+                # FusedConvBN(out_channels, out_channels * BasicBlock.expansion, kernel_size=3, padding=1)
+                nn.Conv2d(out_channels, out_channels * BasicBlock.expansion, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.SyncBatchNorm(out_channels * BasicBlock.expansion),
             )
         else:
             self.residual_function = nn.Sequential(
-                FusedConvBN(in_channels, out_channels, kernel_size=3, padding=1),
+                # FusedConvBN(in_channels, out_channels, kernel_size=3, padding=1),
+                nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.SyncBatchNorm(out_channels),
                 # nn.ReLU(inplace=True),
                 nn.CELU(alpha=0.075, inplace=True),
-                FusedConvBN(out_channels, out_channels * BasicBlock.expansion, kernel_size=3, padding=1)
+                # FusedConvBN(out_channels, out_channels * BasicBlock.expansion, kernel_size=3, padding=1)
+                nn.Conv2d(out_channels, out_channels * BasicBlock.expansion, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.SyncBatchNorm(out_channels * BasicBlock.expansion),
             )
 
         # shortcut
@@ -182,7 +189,8 @@ class BasicBlock(nn.Module):
         if stride != 1 or in_channels != BasicBlock.expansion * out_channels:
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels * BasicBlock.expansion, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(out_channels * BasicBlock.expansion)
+                # nn.BatchNorm2d(out_channels * BottleNeck.expansion)
+                nn.SyncBatchNorm(out_channels * BottleNeck.expansion)
             )
 
     def forward(self, x):
@@ -199,20 +207,31 @@ class BottleNeck(nn.Module):
         super().__init__()
         if stride != 1:
             self.residual_function = nn.Sequential(
-                FusedConvBN(in_channels, out_channels, kernel_size=1),
+                # FusedConvBN(in_channels, out_channels, kernel_size=1),
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0, bias=False),
+                nn.SyncBatchNorm(out_channels),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(out_channels, out_channels, stride=stride, kernel_size=3, padding=1, bias=False),
-                nn.BatchNorm2d(out_channels),
+                # nn.BatchNorm2d(out_channels),
+                nn.SyncBatchNorm(out_channels),
                 nn.ReLU(inplace=True),
-                FusedConvBN(out_channels, out_channels * BottleNeck.expansion, kernel_size=1)
+                # FusedConvBN(out_channels, out_channels * BottleNeck.expansion, kernel_size=1)
+                nn.Conv2d(out_channels, out_channels * BottleNeck.expansion, kernel_size=1, stride=1, padding=0, bias=False),
+                nn.SyncBatchNorm(out_channels * BottleNeck.expansion),
             )
         else:
             self.residual_function = nn.Sequential(
-                FusedConvBN(in_channels, out_channels, kernel_size=1),
+                # FusedConvBN(in_channels, out_channels, kernel_size=1),
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0, bias=False),
+                nn.SyncBatchNorm(out_channels),
                 nn.ReLU(inplace=True),
-                FusedConvBN(out_channels, out_channels, kernel_size=3, padding=1),
+                # FusedConvBN(out_channels, out_channels, kernel_size=3, padding=1),
+                nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.SyncBatchNorm(out_channels),
                 nn.ReLU(inplace=True),
-                FusedConvBN(out_channels, out_channels * BottleNeck.expansion, kernel_size=1)
+                # FusedConvBN(out_channels, out_channels * BottleNeck.expansion, kernel_size=1)
+                nn.Conv2d(out_channels, out_channels * BottleNeck.expansion, kernel_size=1, stride=1, padding=0, bias=False),
+                nn.SyncBatchNorm(out_channels * BottleNeck.expansion),
             )
 
         self.shortcut = nn.Sequential()
@@ -220,7 +239,8 @@ class BottleNeck(nn.Module):
         if stride != 1 or in_channels != out_channels * BottleNeck.expansion:
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels * BottleNeck.expansion, stride=stride, kernel_size=1, bias=False),
-                nn.BatchNorm2d(out_channels * BottleNeck.expansion)
+                # nn.BatchNorm2d(out_channels * BottleNeck.expansion)
+                nn.SyncBatchNorm(out_channels * BottleNeck.expansion)
             )
 
     def forward(self, x):
@@ -235,7 +255,9 @@ class ResNet(nn.Module):
         self.in_channels = 64
 
         self.conv1 = nn.Sequential(
-            FusedConvBN(3, 64, kernel_size=3, padding=1),
+            # FusedConvBN(3, 64, kernel_size=3, padding=1),
+            nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.SyncBatchNorm(64),
             # nn.ReLU(inplace=True))
             nn.CELU(alpha=0.075, inplace=True))
         # we use a different inputsize than the original paper
