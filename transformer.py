@@ -113,19 +113,20 @@ class PositionalEncoding(nn.Module):
     def __init__(self, d_model, dropout, max_len):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
-        pe = torch.zeros((max_len, d_model), device=device)
-        position = torch.arange(0, max_len, device=device).unsqueeze(1)
-        scale = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model)).to(device)
-        pe[:, 0::2] = torch.sin(position * scale)
-        pe[:, 1::2] = torch.cos(position * scale)
-        self.pe = pe.unsqueeze(0)
-        # self.register_buffer("pe", pe)
+        self.register_buffer('pe', torch.zeros((max_len, d_model)))
+        # pe = torch.zeros((max_len, d_model), device=device)
+        self.register_buffer('position', torch.arange(0, max_len).unsqueeze(1))
+        # position = torch.arange(0, max_len, device=device).unsqueeze(1)
+        self.register_buffer('scale', torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model)))
+        # scale = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model)).to(device)
+        self.pe[:, 0::2] = torch.sin(self.position * self.scale)
+        self.pe[:, 1::2] = torch.cos(self.position * self.scale)
+        self.pe = self.pe.unsqueeze(0)
         # self.pe = nn.Parameter(pe, requires_grad=False)
         # self.register_parameter("pe", pe)
 
     def forward(self, x):
-        gpu_index = x.device
-        x = x + self.pe[:, :x.size(1)].to(gpu_index)
+        x = x + self.pe[:, :x.size(1)]
         return self.dropout(x)
 
 
@@ -211,8 +212,8 @@ class MultiheadAttention(nn.Module):
         self.heads = nn.ModuleList()
         self.attn = None
         for _ in range(3):
-            self.heads.append(nn.Linear(d_model, d_model, device=device))
-        self.output = nn.Linear(d_model, d_model, device=device)
+            self.heads.append(nn.Linear(d_model, d_model))
+        self.output = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, query, key, value, mask=None):
@@ -232,8 +233,8 @@ class LayerNorm(nn.Module):
 
     def __init__(self, features, eps=1e-6):
         super(LayerNorm, self).__init__()
-        self.a_2 = nn.Parameter(torch.ones(features, device=device))
-        self.b_2 = nn.Parameter(torch.zeros(features, device=device))
+        self.register_buffer('a_2', torch.ones(features))
+        self.register_buffer('b_2', torch.zeros(features))
         self.eps = eps
 
     def forward(self, x):
